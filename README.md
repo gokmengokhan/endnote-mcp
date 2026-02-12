@@ -147,4 +147,4 @@ Five built-in styles:
 
 ## License
 
-MIT
+AGPL-3.0 — free to use, modify, and distribute. See [LICENSE](LICENSE) for details.
