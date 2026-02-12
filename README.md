@@ -1,5 +1,7 @@
 # EndNote MCP
 
+<!-- mcp-name: io.github.gokmengokhan/endnote-mcp -->
+
 Connect your EndNote reference library to Claude AI. Search references, read PDFs, and format citations — all directly in Claude Desktop conversations.
 
 ## What It Does
