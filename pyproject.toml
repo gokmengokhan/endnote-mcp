@@ -35,10 +35,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/gokhangokmen/endnote-mcp"
-Documentation = "https://github.com/gokhangokmen/endnote-mcp#readme"
-Repository = "https://github.com/gokhangokmen/endnote-mcp"
-Issues = "https://github.com/gokhangokmen/endnote-mcp/issues"
+Homepage = "https://github.com/gokmengokhan/endnote-mcp"
+Documentation = "https://github.com/gokmengokhan/endnote-mcp#readme"
+Repository = "https://github.com/gokmengokhan/endnote-mcp"
+Issues = "https://github.com/gokmengokhan/endnote-mcp/issues"
 
 [build-system]
 requires = ["hatchling"]
