@@ -382,7 +382,9 @@ def _run_index(config_path, *, full=False, skip_pdfs=False):
         if new_pdf_refs:
             pdf_ok = 0
             pdf_fail = 0
+            pdf_skipped = 0
             total_pages = 0
+            max_pdf_size = 50 * 1024 * 1024  # Skip PDFs larger than 50 MB
 
             with Progress(
                 SpinnerColumn(),
@@ -400,6 +402,12 @@ def _run_index(config_path, *, full=False, skip_pdfs=False):
                         progress.update(task, advance=1)
                         continue
 
+                    # Skip very large PDFs (books) — they take too long
+                    if pdf_path.stat().st_size > max_pdf_size:
+                        pdf_skipped += 1
+                        progress.update(task, advance=1)
+                        continue
+
                     try:
                         page_count = 0
                         for page_num, text in extract_pages(pdf_path):
@@ -412,16 +420,18 @@ def _run_index(config_path, *, full=False, skip_pdfs=False):
 
                     progress.update(task, advance=1, description=f"Extracting PDFs... ({pdf_ok} OK, {pdf_fail} failed)")
 
-                    if i % 100 == 0:
+                    # Commit every 25 PDFs for more visible progress
+                    if i % 25 == 0:
                         conn.commit()
 
                 conn.commit()
 
-            click.secho(
-                f"  ✓ {pdf_ok:,} PDFs extracted ({total_pages:,} pages)"
-                + (f", {pdf_fail} not found" if pdf_fail else ""),
-                fg="green",
-            )
+            summary = f"  ✓ {pdf_ok:,} PDFs extracted ({total_pages:,} pages)"
+            if pdf_fail:
+                summary += f", {pdf_fail} not found"
+            if pdf_skipped:
+                summary += f", {pdf_skipped} skipped (>50 MB)"
+            click.secho(summary, fg="green")
         else:
             click.echo("  No new PDFs to index.")
 

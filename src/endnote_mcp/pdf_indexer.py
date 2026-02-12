@@ -3,34 +3,91 @@
 from __future__ import annotations
 
 import logging
+import signal
 from pathlib import Path
 from typing import Generator
+from urllib.parse import unquote
 
 import fitz  # PyMuPDF
 
+
+class _PdfTimeout(Exception):
+    pass
+
+
+def _timeout_handler(signum, frame):
+    raise _PdfTimeout("PDF extraction timed out")
+
 logger = logging.getLogger(__name__)
 
+# Cached filename → path mapping (built once per pdf_dir)
+_pdf_cache: dict[str, Path] = {}
+_pdf_cache_dir: Path | None = None
 
-def extract_pages(pdf_path: str | Path) -> Generator[tuple[int, str], None, None]:
-    """Yield (page_number, text) for each page in a PDF.
+
+def _build_pdf_cache(pdf_dir: Path) -> None:
+    """Scan pdf_dir once and cache all PDF paths by filename."""
+    global _pdf_cache, _pdf_cache_dir
+    if _pdf_cache_dir == pdf_dir and _pdf_cache:
+        return
+    logger.info("Building PDF file cache for %s...", pdf_dir)
+    _pdf_cache = {}
+    for path in pdf_dir.rglob("*.pdf"):
+        _pdf_cache[path.name] = path
+        # Also index URL-decoded name
+        decoded = unquote(path.name)
+        if decoded != path.name:
+            _pdf_cache[decoded] = path
+    _pdf_cache_dir = pdf_dir
+    logger.info("Cached %d PDF files.", len(_pdf_cache))
+
+
+def extract_pages(pdf_path: str | Path, timeout: int = 30) -> list[tuple[int, str]]:
+    """Extract (page_number, text) for each page in a PDF.
 
     Page numbers are 1-based to match human-readable page references.
+    Returns a list instead of generator so the timeout covers the full extraction.
+    Skips PDFs that take longer than `timeout` seconds.
     """
     pdf_path = Path(pdf_path)
+
+    # Set alarm-based timeout (Unix only, ignored on Windows)
+    old_handler = None
+    try:
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(timeout)
+    except (OSError, AttributeError):
+        pass  # Windows or signal not available
+
     try:
         doc = fitz.open(str(pdf_path))
+    except _PdfTimeout:
+        logger.warning("Timeout opening PDF %s", pdf_path.name)
+        return []
     except Exception as e:
         logger.warning("Failed to open PDF %s: %s", pdf_path.name, e)
-        return
+        return []
 
+    results = []
     try:
         for page_idx in range(len(doc)):
             page = doc[page_idx]
             text = page.get_text("text")
             if text and text.strip():
-                yield page_idx + 1, text.strip()
+                results.append((page_idx + 1, text.strip()))
+    except _PdfTimeout:
+        logger.warning("Timeout extracting PDF %s (got %d pages before timeout)", pdf_path.name, len(results))
     finally:
         doc.close()
+        # Cancel alarm and restore handler
+        try:
+            signal.alarm(0)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
+        except (OSError, AttributeError):
+            pass
+
+    return results
 
 
 def read_pages(pdf_path: str | Path, start: int, end: int) -> list[dict]:
@@ -65,28 +122,32 @@ def read_pages(pdf_path: str | Path, start: int, end: int) -> list[dict]:
 
 
 def find_pdf(pdf_dir: Path, pdf_filename: str) -> Path | None:
-    """Locate a PDF file in the pdf_dir, handling common path variations.
+    """Locate a PDF file in the pdf_dir using a cached lookup.
 
-    EndNote stores PDFs in various subdirectory structures. This function
-    searches recursively.
+    On first call, scans the entire pdf_dir once and caches all PDF paths.
+    Subsequent lookups are O(1) dict lookups instead of recursive searches.
     """
     if not pdf_filename:
         return None
 
-    # Direct path
+    # Direct path (fastest)
     direct = pdf_dir / pdf_filename
     if direct.exists():
         return direct
 
-    # Search recursively
-    for path in pdf_dir.rglob(pdf_filename):
-        return path
+    # Build cache on first use
+    _build_pdf_cache(pdf_dir)
+
+    # Lookup by filename
+    result = _pdf_cache.get(pdf_filename)
+    if result:
+        return result
 
     # Try URL-decoded name
-    from urllib.parse import unquote
     decoded = unquote(pdf_filename)
     if decoded != pdf_filename:
-        for path in pdf_dir.rglob(decoded):
-            return path
+        result = _pdf_cache.get(decoded)
+        if result:
+            return result
 
     return None
