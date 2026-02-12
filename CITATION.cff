@@ -5,7 +5,7 @@ title: "EndNote MCP: Connecting EndNote Reference Libraries to Claude AI"
 authors:
   - family-names: Gokmen
     given-names: Gokhan
-    orcid: ""
+    orcid: "https://orcid.org/0000-0001-8883-1770"
 version: 1.0.0
 date-released: "2026-02-11"
 url: "https://github.com/gokmengokhan/endnote-mcp"
