@@ -145,6 +145,14 @@ Five built-in styles:
 
 **Claude Desktop doesn't show the tool** — Run `endnote-mcp install`, then restart Claude Desktop
 
+## Citing This Software
+
+If you use this tool in your research, please cite it:
+
+> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.0.0) [Computer software]. https://github.com/gokmengokhan/endnote-mcp
+
+Or use the "Cite this repository" button on GitHub for BibTeX/APA formats.
+
 ## License
 
 AGPL-3.0 — free to use, modify, and distribute. See [LICENSE](LICENSE) for details.

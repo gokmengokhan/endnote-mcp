@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it as below."
+type: software
+title: "EndNote MCP: Connecting EndNote Reference Libraries to Claude AI"
+authors:
+  - family-names: Gokmen
+    given-names: Gokhan
+    orcid: ""
+version: 1.0.0
+date-released: "2026-02-11"
+url: "https://github.com/gokmengokhan/endnote-mcp"
+repository-code: "https://github.com/gokmengokhan/endnote-mcp"
+license: AGPL-3.0-or-later
+keywords:
+  - endnote
+  - mcp
+  - claude
+  - reference management
+  - citation
+  - academic research
+  - literature review
+  - pdf search
+abstract: >-
+  An MCP (Model Context Protocol) server that connects EndNote reference
+  libraries to Claude AI. Enables researchers to search references, read
+  PDFs, and format citations directly within Claude Desktop conversations.
+  Supports full-text search across PDF content, BM25-ranked metadata search,
+  and five citation styles (APA 7th, Harvard, Vancouver, Chicago, IEEE).
