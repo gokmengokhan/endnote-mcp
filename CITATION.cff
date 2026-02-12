@@ -8,6 +8,7 @@ authors:
     orcid: "https://orcid.org/0000-0001-8883-1770"
 version: 1.0.0
 date-released: "2026-02-11"
+doi: "10.5281/zenodo.18617547"
 url: "https://github.com/gokmengokhan/endnote-mcp"
 repository-code: "https://github.com/gokmengokhan/endnote-mcp"
 license: AGPL-3.0-or-later
