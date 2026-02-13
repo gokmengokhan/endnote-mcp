@@ -384,7 +384,7 @@ def _run_index(config_path, *, full=False, skip_pdfs=False):
             pdf_fail = 0
             pdf_skipped = 0
             total_pages = 0
-            max_pdf_size = 50 * 1024 * 1024  # Skip PDFs larger than 50 MB
+            max_pdf_size = 200 * 1024 * 1024  # Skip PDFs larger than 200 MB
 
             with Progress(
                 SpinnerColumn(),
@@ -402,15 +402,18 @@ def _run_index(config_path, *, full=False, skip_pdfs=False):
                         progress.update(task, advance=1)
                         continue
 
-                    # Skip very large PDFs (books) — they take too long
-                    if pdf_path.stat().st_size > max_pdf_size:
+                    file_size = pdf_path.stat().st_size
+                    if file_size > max_pdf_size:
                         pdf_skipped += 1
                         progress.update(task, advance=1)
                         continue
 
+                    # Give large PDFs (>50 MB) more time to extract
+                    timeout = 120 if file_size > 50 * 1024 * 1024 else 30
+
                     try:
                         page_count = 0
-                        for page_num, text in extract_pages(pdf_path):
+                        for page_num, text in extract_pages(pdf_path, timeout=timeout):
                             insert_pdf_page(conn, rec_number, page_num, text)
                             page_count += 1
                         total_pages += page_count
@@ -430,7 +433,7 @@ def _run_index(config_path, *, full=False, skip_pdfs=False):
             if pdf_fail:
                 summary += f", {pdf_fail} not found"
             if pdf_skipped:
-                summary += f", {pdf_skipped} skipped (>50 MB)"
+                summary += f", {pdf_skipped} skipped (>200 MB)"
             click.secho(summary, fg="green")
         else:
             click.echo("  No new PDFs to index.")
