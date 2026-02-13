@@ -1,6 +1,6 @@
 [project]
 name = "endnote-mcp"
-version = "1.0.1"
+version = "1.1.0"
 description = "Connect your EndNote reference library to Claude AI — search, cite, and read PDFs directly in conversations"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
