@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import OrderedDict
 from typing import Any
 
 
@@ -14,7 +15,7 @@ def search_references(
     year_from: str | None = None,
     year_to: str | None = None,
     author: str | None = None,
-    limit: int = 20,
+    limit: int = 50,
 ) -> list[dict]:
     """Search reference metadata using FTS5 with BM25 ranking.
 
@@ -65,14 +66,21 @@ def search_fulltext(
     conn: sqlite3.Connection,
     query: str,
     *,
-    limit: int = 20,
+    limit: int = 50,
+    max_snippets_per_ref: int = 3,
 ) -> list[dict]:
-    """Search inside PDF content using FTS5 with BM25 ranking."""
+    """Search inside PDF content using FTS5 with BM25 ranking.
+
+    Returns results grouped by reference. Each result dict contains a
+    list of ``snippets`` with (page, snippet) matches.
+    """
     if not query.strip():
         return []
 
     fts_query = query.replace('"', '""')
 
+    # Fetch a generous pool of raw matches, then group by reference
+    inner_limit = max(limit * 10, 200)
     sql = """
         SELECT
             pp.rec_number,
@@ -80,7 +88,9 @@ def search_fulltext(
             r.title,
             r.authors,
             r.year,
-            snippet(pdf_fts, 0, '>>>', '<<<', '...', 64) AS snippet,
+            r.journal,
+            r.keywords,
+            snippet(pdf_fts, 0, '>>>', '<<<', '...', 400) AS snippet,
             bm25(pdf_fts) AS rank
         FROM pdf_fts
         JOIN pdf_pages pp ON pp.id = pdf_fts.rowid
@@ -89,19 +99,32 @@ def search_fulltext(
         ORDER BY rank
         LIMIT ?
     """
-    rows = conn.execute(sql, [fts_query, limit]).fetchall()
+    rows = conn.execute(sql, [fts_query, inner_limit]).fetchall()
 
-    results = []
+    # Group by rec_number, keeping per-ref snippet order (best rank first)
+    grouped: OrderedDict[int, dict] = OrderedDict()
     for row in rows:
-        results.append({
-            "rec_number": row["rec_number"],
-            "page": row["page_number"],
-            "title": row["title"],
-            "authors": _parse_authors_short(row["authors"]),
-            "year": row["year"],
-            "snippet": row["snippet"],
-        })
-    return results
+        rn = row["rec_number"]
+        if rn not in grouped:
+            grouped[rn] = {
+                "rec_number": rn,
+                "title": row["title"],
+                "authors": _parse_authors_short(row["authors"]),
+                "year": row["year"],
+                "journal": row["journal"],
+                "keywords": _parse_json_list(
+                    row["keywords"] if "keywords" in row.keys() else "[]"
+                ),
+                "snippets": [],
+            }
+        if len(grouped[rn]["snippets"]) < max_snippets_per_ref:
+            grouped[rn]["snippets"].append({
+                "page": row["page_number"],
+                "snippet": row["snippet"],
+            })
+
+    # Return up to `limit` unique references
+    return list(grouped.values())[:limit]
 
 
 def get_reference_details(conn: sqlite3.Connection, rec_number: int) -> dict | None:
@@ -167,6 +190,53 @@ def list_by_topic(
 
     rows = conn.execute(sql, params).fetchall()
     return [_row_to_ref_summary(row) for row in rows]
+
+
+def search_library(
+    conn: sqlite3.Connection,
+    query: str,
+    *,
+    year_from: str | None = None,
+    year_to: str | None = None,
+    author: str | None = None,
+    limit: int = 30,
+) -> list[dict]:
+    """Combined search across metadata and PDF content.
+
+    Runs both ``search_references`` and ``search_fulltext``, then merges
+    results by ``rec_number``.  References that appear in *both* result
+    sets are boosted to the top.
+    """
+    meta_results = search_references(
+        conn, query, year_from=year_from, year_to=year_to, author=author, limit=limit
+    )
+    ft_results = search_fulltext(conn, query, limit=limit)
+
+    # Index fulltext results by rec_number for fast lookup
+    ft_by_rn: dict[int, dict] = {r["rec_number"]: r for r in ft_results}
+
+    both: list[dict] = []      # matched in metadata AND fulltext
+    meta_only: list[dict] = [] # matched in metadata only
+
+    seen: set[int] = set()
+    for ref in meta_results:
+        rn = ref["rec_number"]
+        seen.add(rn)
+        ft = ft_by_rn.get(rn)
+        entry = {**ref, "snippets": ft["snippets"] if ft else []}
+        if ft:
+            both.append(entry)
+        else:
+            meta_only.append(entry)
+
+    # Fulltext-only results (not in metadata results)
+    ft_only: list[dict] = []
+    for rn, ft in ft_by_rn.items():
+        if rn not in seen:
+            ft_only.append(ft)
+
+    merged = both + meta_only + ft_only
+    return merged[:limit]
 
 
 def _row_to_ref_summary(row: sqlite3.Row) -> dict:

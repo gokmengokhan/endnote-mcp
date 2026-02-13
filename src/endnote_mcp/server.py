@@ -1,4 +1,4 @@
-"""MCP server exposing 7 tools for Claude to interact with an EndNote library."""
+"""MCP server exposing 8 tools for Claude to interact with an EndNote library."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from endnote_mcp.db import connect, get_stats
 from endnote_mcp.search import (
     search_references as _search_refs,
     search_fulltext as _search_ft,
+    search_library as _search_lib,
     get_reference_details as _get_details,
     list_by_topic as _list_topic,
 )
@@ -57,7 +58,7 @@ def search_references(
     year_from: str | None = None,
     year_to: str | None = None,
     author: str | None = None,
-    limit: int = 20,
+    limit: int = 50,
 ) -> str:
     """Search your EndNote library by title, author, keywords, or abstract.
 
@@ -68,7 +69,7 @@ def search_references(
         year_from: Optional start year filter (e.g. "2015").
         year_to: Optional end year filter (e.g. "2023").
         author: Optional author name filter (partial match).
-        limit: Maximum results to return (default 20).
+        limit: Maximum results to return (default 50).
     """
     conn = _get_conn()
     results = _search_refs(conn, query, year_from=year_from, year_to=year_to, author=author, limit=limit)
@@ -89,30 +90,82 @@ def search_references(
 # Tool 2: search_fulltext
 # ====================================================================
 @mcp.tool()
-def search_fulltext(query: str, limit: int = 20) -> str:
+def search_fulltext(query: str, limit: int = 50) -> str:
     """Search inside the PDF content of your references.
 
     Finds specific quotes, methods, concepts, or passages within papers.
+    Results are grouped by reference — each paper appears once with its
+    top matching snippets listed underneath.
 
     Args:
         query: Search terms to find inside PDF text.
-        limit: Maximum results to return (default 20).
+        limit: Maximum references to return (default 50).
     """
     conn = _get_conn()
     results = _search_ft(conn, query, limit=limit)
     if not results:
         return f"No fulltext matches for: {query}"
-    lines = [f"Found {len(results)} match(es) in PDFs:\n"]
+    total_snippets = sum(len(r["snippets"]) for r in results)
+    lines = [f"Found {total_snippets} match(es) across {len(results)} reference(s):\n"]
     for r in results:
         lines.append(
-            f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}  — page {r['page']}\n"
-            f"    ...{r['snippet']}..."
+            f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}"
         )
+        for s in r["snippets"]:
+            lines.append(f"      — page {s['page']}: ...{s['snippet']}...")
     return "\n".join(lines)
 
 
 # ====================================================================
-# Tool 3: get_reference_details
+# Tool 3: search_library (combined metadata + PDF search)
+# ====================================================================
+@mcp.tool()
+def search_library(
+    query: str,
+    year_from: str | None = None,
+    year_to: str | None = None,
+    author: str | None = None,
+    limit: int = 30,
+) -> str:
+    """Search your entire library — metadata AND PDF content — in one call.
+
+    Combines title/author/keyword search with full-text PDF search.
+    References matching in both metadata and PDF content are ranked highest.
+
+    Args:
+        query: Search terms (e.g. "grounded theory", "social capital").
+        year_from: Optional start year filter (e.g. "2015").
+        year_to: Optional end year filter (e.g. "2023").
+        author: Optional author name filter (partial match).
+        limit: Maximum references to return (default 30).
+    """
+    conn = _get_conn()
+    results = _search_lib(
+        conn, query,
+        year_from=year_from, year_to=year_to, author=author, limit=limit,
+    )
+    if not results:
+        return f"No references found for: {query}"
+
+    with_pdf = sum(1 for r in results if r.get("snippets"))
+    lines = [f"Found {len(results)} reference(s) ({with_pdf} with PDF matches):\n"]
+    for r in results:
+        kw = ", ".join(r["keywords"][:5]) if r.get("keywords") else ""
+        lines.append(
+            f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}."
+            + (f" *{r['journal']}*." if r.get("journal") else "")
+        )
+        if kw:
+            lines.append(f"    Keywords: {kw}")
+        if r.get("snippets"):
+            lines.append("    PDF matches:")
+            for s in r["snippets"]:
+                lines.append(f"      — page {s['page']}: ...{s['snippet']}...")
+    return "\n".join(lines)
+
+
+# ====================================================================
+# Tool 4: get_reference_details
 # ====================================================================
 @mcp.tool()
 def get_reference_details(rec_number: int) -> str:
@@ -164,7 +217,7 @@ def get_reference_details(rec_number: int) -> str:
 
 
 # ====================================================================
-# Tool 4: get_citation
+# Tool 5: get_citation
 # ====================================================================
 @mcp.tool()
 def get_citation(rec_number: int, style: str = "apa7") -> str:
@@ -188,7 +241,7 @@ def get_citation(rec_number: int, style: str = "apa7") -> str:
 
 
 # ====================================================================
-# Tool 5: read_pdf_section
+# Tool 6: read_pdf_section
 # ====================================================================
 @mcp.tool()
 def read_pdf_section(rec_number: int, start_page: int = 1, end_page: int = 5) -> str:
@@ -236,7 +289,7 @@ def read_pdf_section(rec_number: int, start_page: int = 1, end_page: int = 5) ->
 
 
 # ====================================================================
-# Tool 6: list_references_by_topic
+# Tool 7: list_references_by_topic
 # ====================================================================
 @mcp.tool()
 def list_references_by_topic(
@@ -271,7 +324,7 @@ def list_references_by_topic(
 
 
 # ====================================================================
-# Tool 7: rebuild_index
+# Tool 8: rebuild_index
 # ====================================================================
 @mcp.tool()
 def rebuild_index() -> str:
