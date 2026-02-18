@@ -15,6 +15,7 @@ def search_references(
     year_from: str | None = None,
     year_to: str | None = None,
     author: str | None = None,
+    ref_type: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
     """Search reference metadata using FTS5 with BM25 ranking.
@@ -54,6 +55,9 @@ def search_references(
     if author:
         sql += " AND r.authors LIKE ?"
         params.append(f"%{author}%")
+    if ref_type:
+        sql += " AND r.ref_type LIKE ?"
+        params.append(f"%{ref_type}%")
 
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
@@ -154,6 +158,7 @@ def list_by_topic(
     *,
     year_from: str | None = None,
     year_to: str | None = None,
+    ref_type: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
     """List references matching a broad topic across keywords, title, abstract."""
@@ -184,6 +189,9 @@ def list_by_topic(
     if year_to:
         sql += " AND CAST(r.year AS INTEGER) <= ?"
         params.append(int(year_to))
+    if ref_type:
+        sql += " AND r.ref_type LIKE ?"
+        params.append(f"%{ref_type}%")
 
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
@@ -199,43 +207,71 @@ def search_library(
     year_from: str | None = None,
     year_to: str | None = None,
     author: str | None = None,
+    ref_type: str | None = None,
     limit: int = 30,
 ) -> list[dict]:
-    """Combined search across metadata and PDF content.
+    """Combined search across metadata, PDF content, and semantic similarity.
 
-    Runs both ``search_references`` and ``search_fulltext``, then merges
-    results by ``rec_number``.  References that appear in *both* result
-    sets are boosted to the top.
+    Runs ``search_references``, ``search_fulltext``, and (when available)
+    ``search_semantic``, then merges results by ``rec_number``.  References
+    that appear in more result sets are ranked higher.
     """
     meta_results = search_references(
-        conn, query, year_from=year_from, year_to=year_to, author=author, limit=limit
+        conn, query, year_from=year_from, year_to=year_to, author=author,
+        ref_type=ref_type, limit=limit,
     )
     ft_results = search_fulltext(conn, query, limit=limit)
+
+    # Try semantic search if available
+    sem_by_rn: dict[int, dict] = {}
+    try:
+        from endnote_mcp import embeddings
+        if embeddings.is_available() and embeddings.has_embeddings(conn):
+            sem_results = search_semantic(conn, query, limit=limit)
+            sem_by_rn = {r["rec_number"]: r for r in sem_results}
+    except Exception:
+        pass
 
     # Index fulltext results by rec_number for fast lookup
     ft_by_rn: dict[int, dict] = {r["rec_number"]: r for r in ft_results}
 
-    both: list[dict] = []      # matched in metadata AND fulltext
-    meta_only: list[dict] = [] # matched in metadata only
+    # Score each reference by how many search methods found it
+    all_rns: OrderedDict[int, dict] = OrderedDict()
 
-    seen: set[int] = set()
+    # Process metadata results first (preserves BM25 order)
     for ref in meta_results:
         rn = ref["rec_number"]
-        seen.add(rn)
         ft = ft_by_rn.get(rn)
-        entry = {**ref, "snippets": ft["snippets"] if ft else []}
-        if ft:
-            both.append(entry)
-        else:
-            meta_only.append(entry)
+        sem = sem_by_rn.get(rn)
+        score = 1 + (1 if ft else 0) + (1 if sem else 0)
+        entry = {**ref, "snippets": ft["snippets"] if ft else [], "_score": score}
+        if sem:
+            entry["similarity"] = sem.get("similarity")
+        all_rns[rn] = entry
 
-    # Fulltext-only results (not in metadata results)
-    ft_only: list[dict] = []
+    # Add fulltext-only results
     for rn, ft in ft_by_rn.items():
-        if rn not in seen:
-            ft_only.append(ft)
+        if rn not in all_rns:
+            sem = sem_by_rn.get(rn)
+            score = 1 + (1 if sem else 0)
+            entry = {**ft, "_score": score}
+            if sem:
+                entry["similarity"] = sem.get("similarity")
+            all_rns[rn] = entry
 
-    merged = both + meta_only + ft_only
+    # Add semantic-only results
+    for rn, sem in sem_by_rn.items():
+        if rn not in all_rns:
+            entry = {**sem, "snippets": [], "_score": 1}
+            all_rns[rn] = entry
+
+    # Sort by score (descending), then preserve original order within each tier
+    merged = sorted(all_rns.values(), key=lambda r: -r["_score"])
+
+    # Remove internal score key
+    for r in merged:
+        r.pop("_score", None)
+
     return merged[:limit]
 
 

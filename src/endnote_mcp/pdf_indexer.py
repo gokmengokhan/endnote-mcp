@@ -2,13 +2,31 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import signal
+import sys
 from pathlib import Path
 from typing import Generator
 from urllib.parse import unquote
 
 import fitz  # PyMuPDF
+
+
+@contextlib.contextmanager
+def _suppress_stderr():
+    """Suppress stderr to silence harmless MuPDF warnings."""
+    stderr_fd = sys.stderr.fileno()
+    old_fd = os.dup(stderr_fd)
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull, stderr_fd)
+        yield
+    finally:
+        os.dup2(old_fd, stderr_fd)
+        os.close(old_fd)
+        os.close(devnull)
 
 
 class _PdfTimeout(Exception):
@@ -60,7 +78,8 @@ def extract_pages(pdf_path: str | Path, timeout: int = 30) -> list[tuple[int, st
         pass  # Windows or signal not available
 
     try:
-        doc = fitz.open(str(pdf_path))
+        with _suppress_stderr():
+            doc = fitz.open(str(pdf_path))
     except _PdfTimeout:
         logger.warning("Timeout opening PDF %s", pdf_path.name)
         return []
@@ -70,11 +89,12 @@ def extract_pages(pdf_path: str | Path, timeout: int = 30) -> list[tuple[int, st
 
     results = []
     try:
-        for page_idx in range(len(doc)):
-            page = doc[page_idx]
-            text = page.get_text("text")
-            if text and text.strip():
-                results.append((page_idx + 1, text.strip()))
+        with _suppress_stderr():
+            for page_idx in range(len(doc)):
+                page = doc[page_idx]
+                text = page.get_text("text")
+                if text and text.strip():
+                    results.append((page_idx + 1, text.strip()))
     except _PdfTimeout:
         logger.warning("Timeout extracting PDF %s (got %d pages before timeout)", pdf_path.name, len(results))
     finally:
@@ -105,16 +125,18 @@ def read_pages(pdf_path: str | Path, start: int, end: int) -> list[dict]:
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
-    doc = fitz.open(str(pdf_path))
+    with _suppress_stderr():
+        doc = fitz.open(str(pdf_path))
     results = []
     try:
         total = len(doc)
         start = max(1, start)
         end = min(total, end)
-        for page_num in range(start, end + 1):
-            page = doc[page_num - 1]
-            text = page.get_text("text").strip()
-            results.append({"page": page_num, "text": text, "total_pages": total})
+        with _suppress_stderr():
+            for page_num in range(start, end + 1):
+                page = doc[page_num - 1]
+                text = page.get_text("text").strip()
+                results.append({"page": page_num, "text": text, "total_pages": total})
     finally:
         doc.close()
 

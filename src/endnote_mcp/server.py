@@ -61,6 +61,7 @@ def search_references(
     year_from: str | None = None,
     year_to: str | None = None,
     author: str | None = None,
+    ref_type: str | None = None,
     limit: int = 50,
 ) -> str:
     """Search your EndNote library by title, author, keywords, or abstract.
@@ -72,10 +73,11 @@ def search_references(
         year_from: Optional start year filter (e.g. "2015").
         year_to: Optional end year filter (e.g. "2023").
         author: Optional author name filter (partial match).
+        ref_type: Optional reference type filter (e.g. "Journal Article", "Book", "Patent").
         limit: Maximum results to return (default 50).
     """
     conn = _get_conn()
-    results = _search_refs(conn, query, year_from=year_from, year_to=year_to, author=author, limit=limit)
+    results = _search_refs(conn, query, year_from=year_from, year_to=year_to, author=author, ref_type=ref_type, limit=limit)
     if not results:
         return f"No references found for: {query}"
     lines = [f"Found {len(results)} reference(s):\n"]
@@ -128,24 +130,27 @@ def search_library(
     year_from: str | None = None,
     year_to: str | None = None,
     author: str | None = None,
+    ref_type: str | None = None,
     limit: int = 30,
 ) -> str:
-    """Search your entire library — metadata AND PDF content — in one call.
+    """Search your entire library — metadata, PDF content, and semantic similarity — in one call.
 
-    Combines title/author/keyword search with full-text PDF search.
-    References matching in both metadata and PDF content are ranked highest.
+    Combines keyword search, full-text PDF search, and AI semantic search.
+    References matching across multiple methods are ranked highest.
 
     Args:
         query: Search terms (e.g. "grounded theory", "social capital").
         year_from: Optional start year filter (e.g. "2015").
         year_to: Optional end year filter (e.g. "2023").
         author: Optional author name filter (partial match).
+        ref_type: Optional reference type filter (e.g. "Journal Article", "Book", "Patent").
         limit: Maximum references to return (default 30).
     """
     conn = _get_conn()
     results = _search_lib(
         conn, query,
-        year_from=year_from, year_to=year_to, author=author, limit=limit,
+        year_from=year_from, year_to=year_to, author=author,
+        ref_type=ref_type, limit=limit,
     )
     if not results:
         return f"No references found for: {query}"
@@ -299,6 +304,7 @@ def list_references_by_topic(
     topic: str,
     year_from: str | None = None,
     year_to: str | None = None,
+    ref_type: str | None = None,
     limit: int = 50,
 ) -> str:
     """List references matching a broad topic or theme.
@@ -309,10 +315,11 @@ def list_references_by_topic(
         topic: Broad topic terms (e.g. "inequality", "qualitative methods").
         year_from: Optional start year filter.
         year_to: Optional end year filter.
+        ref_type: Optional reference type filter (e.g. "Journal Article", "Book", "Patent").
         limit: Maximum results (default 50).
     """
     conn = _get_conn()
-    results = _list_topic(conn, topic, year_from=year_from, year_to=year_to, limit=limit)
+    results = _list_topic(conn, topic, year_from=year_from, year_to=year_to, ref_type=ref_type, limit=limit)
     if not results:
         return f"No references found for topic: {topic}"
     lines = [f"Found {len(results)} reference(s) on '{topic}':\n"]
