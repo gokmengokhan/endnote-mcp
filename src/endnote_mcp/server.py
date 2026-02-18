@@ -1,4 +1,4 @@
-"""MCP server exposing 11 tools for Claude to interact with an EndNote library."""
+"""MCP server exposing 12 tools for Claude to interact with an EndNote library."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from endnote_mcp.search import (
     get_references_batch as _get_refs_batch,
     search_semantic as _search_semantic,
 )
-from endnote_mcp.citation import format_citation, STYLES
+from endnote_mcp.citation import format_citation, format_bibtex, STYLES
 from endnote_mcp.pdf_indexer import find_pdf, read_pages
 
 logger = logging.getLogger(__name__)
@@ -486,7 +486,45 @@ def search_semantic(query: str, limit: int = 20) -> str:
 
 
 # ====================================================================
-# Tool 11: rebuild_index
+# Tool 11: get_bibtex
+# ====================================================================
+@mcp.tool()
+def get_bibtex(rec_numbers: str) -> str:
+    """Export references as BibTeX entries for use in LaTeX.
+
+    Returns complete BibTeX entries that can be pasted into a .bib file.
+
+    Args:
+        rec_numbers: Comma-separated record numbers (e.g. "12,45,78").
+    """
+    try:
+        numbers = [int(x.strip()) for x in rec_numbers.split(",") if x.strip()]
+    except ValueError:
+        return "Invalid rec_numbers format. Use comma-separated integers (e.g. '12,45,78')."
+
+    if not numbers:
+        return "No record numbers provided."
+
+    conn = _get_conn()
+    refs = _get_refs_batch(conn, numbers)
+    if not refs:
+        return "None of the specified references were found."
+
+    entries = []
+    not_found = set(numbers) - {r["rec_number"] for r in refs}
+    for ref in refs:
+        entries.append(format_bibtex(ref))
+
+    result = "\n\n".join(entries)
+
+    if not_found:
+        result += f"\n\n% Not found: {', '.join(str(n) for n in sorted(not_found))}"
+
+    return result
+
+
+# ====================================================================
+# Tool 12: rebuild_index
 # ====================================================================
 @mcp.tool()
 def rebuild_index() -> str:

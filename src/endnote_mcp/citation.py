@@ -349,3 +349,125 @@ def _is_article(ref_type: str) -> bool:
     """Check if the reference type is a journal/periodical article."""
     rt = ref_type.lower()
     return any(kw in rt for kw in ("journal", "article", "magazine", "periodical"))
+
+
+# ---------- BibTeX ----------
+
+def format_bibtex(ref: dict) -> str:
+    """Format a reference dict as a BibTeX entry.
+
+    Args:
+        ref: Reference dict with authors (list), title, year, journal, etc.
+
+    Returns:
+        A complete BibTeX entry string.
+    """
+    authors = ref.get("authors", [])
+    if isinstance(authors, str):
+        try:
+            authors = json.loads(authors)
+        except (json.JSONDecodeError, TypeError):
+            authors = [authors] if authors else []
+
+    title = ref.get("title", "")
+    year = ref.get("year", "")
+    journal = ref.get("journal", "")
+    volume = ref.get("volume", "")
+    issue = ref.get("issue", "")
+    pages = ref.get("pages", "")
+    doi = ref.get("doi", "")
+    publisher = ref.get("publisher", "")
+    place = ref.get("place_published", "")
+    isbn = ref.get("isbn", "")
+    ref_type = ref.get("ref_type", "Journal Article")
+    rec_number = ref.get("rec_number", 0)
+
+    # Determine BibTeX entry type
+    entry_type = _bibtex_entry_type(ref_type)
+
+    # Build cite key: first author surname + year + rec_number
+    cite_key = _bibtex_cite_key(authors, year, rec_number)
+
+    # Format authors for BibTeX: "Surname, Given and Surname, Given"
+    bib_authors = " and ".join(authors) if authors else ""
+
+    # Build fields
+    fields: list[tuple[str, str]] = []
+    if bib_authors:
+        fields.append(("author", bib_authors))
+    if title:
+        fields.append(("title", f"{{{title}}}"))
+    if year:
+        fields.append(("year", year))
+    if journal and _is_article(ref_type):
+        fields.append(("journal", journal))
+    if volume:
+        fields.append(("volume", volume))
+    if issue:
+        fields.append(("number", issue))
+    if pages:
+        fields.append(("pages", pages.replace("-", "--")))
+    if publisher:
+        fields.append(("publisher", publisher))
+    if place:
+        fields.append(("address", place))
+    if doi:
+        doi_clean = doi.strip()
+        if doi_clean.startswith("https://doi.org/"):
+            doi_clean = doi_clean[len("https://doi.org/"):]
+        elif doi_clean.startswith("http://doi.org/"):
+            doi_clean = doi_clean[len("http://doi.org/"):]
+        fields.append(("doi", doi_clean))
+    if isbn:
+        fields.append(("isbn", isbn))
+
+    # Keywords
+    keywords = ref.get("keywords", [])
+    if isinstance(keywords, str):
+        try:
+            keywords = json.loads(keywords)
+        except (json.JSONDecodeError, TypeError):
+            keywords = []
+    if keywords:
+        fields.append(("keywords", ", ".join(keywords)))
+
+    # Build the entry
+    lines = [f"@{entry_type}{{{cite_key},"]
+    for key, val in fields:
+        lines.append(f"  {key} = {{{val}}},")
+    lines.append("}")
+
+    return "\n".join(lines)
+
+
+def _bibtex_entry_type(ref_type: str) -> str:
+    """Map EndNote reference type to BibTeX entry type."""
+    rt = ref_type.lower()
+    if _is_article(rt):
+        return "article"
+    if "book section" in rt or "chapter" in rt:
+        return "incollection"
+    if "book" in rt:
+        return "book"
+    if "conference" in rt or "proceeding" in rt:
+        return "inproceedings"
+    if "thesis" in rt or "dissertation" in rt:
+        return "phdthesis"
+    if "report" in rt:
+        return "techreport"
+    if "patent" in rt:
+        return "misc"
+    if "web" in rt or "electronic" in rt:
+        return "misc"
+    return "misc"
+
+
+def _bibtex_cite_key(authors: list[str], year: str, rec_number: int) -> str:
+    """Generate a BibTeX cite key like 'smith2020r42'."""
+    if authors:
+        first = authors[0].split(",")[0].strip()
+        # Remove non-alphanumeric chars
+        first = re.sub(r"[^a-zA-Z]", "", first).lower()
+    else:
+        first = "unknown"
+    return f"{first}{year}r{rec_number}"

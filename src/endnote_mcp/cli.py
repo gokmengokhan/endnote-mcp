@@ -124,6 +124,9 @@ def index(full, skip_pdfs, embed, config):
     _run_index(config_path, full=full, skip_pdfs=skip_pdfs)
     if embed:
         _run_embed(config_path, full=full)
+    else:
+        # Auto-embed new references if semantic dependencies are available
+        _auto_embed(config_path)
 
 
 # ====================================================================
@@ -293,6 +296,33 @@ def _run_embed(config_path, *, full=False):
     conn.close()
 
     click.secho(f"  ✓ {embedded:,} embeddings generated", fg="green")
+
+
+def _auto_embed(config_path):
+    """Auto-embed new references if semantic dependencies are installed."""
+    try:
+        from endnote_mcp import embeddings
+        if not embeddings.is_available():
+            return
+    except Exception:
+        return
+
+    from endnote_mcp.config import Config
+    from endnote_mcp.db import connect
+
+    cfg = Config.load(config_path)
+    conn = connect(cfg.db_path)
+
+    # Check if there are un-embedded references
+    count = conn.execute("""
+        SELECT COUNT(*) FROM references_
+        WHERE rec_number NOT IN (SELECT rec_number FROM reference_embeddings)
+    """).fetchone()[0]
+    conn.close()
+
+    if count > 0:
+        click.echo(f"\n  {count:,} references without embeddings — auto-embedding...")
+        _run_embed(config_path, full=False)
 
 
 def _find_endnote_libraries() -> list[Path]:
