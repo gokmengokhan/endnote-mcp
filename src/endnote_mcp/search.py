@@ -268,6 +268,112 @@ def _parse_authors_short(authors_json: str) -> str:
     return f"{authors[0]} et al."
 
 
+def find_related(
+    conn: sqlite3.Connection,
+    rec_number: int,
+    *,
+    limit: int = 10,
+) -> list[dict]:
+    """Find references related to a given reference.
+
+    Builds an FTS query from the target reference's keywords and title
+    terms, then searches the library for similar references.
+    """
+    target = get_reference_details(conn, rec_number)
+    if target is None:
+        return []
+
+    # Collect query terms from keywords and title
+    terms: list[str] = []
+
+    # Keywords are the strongest signal
+    keywords = target.get("keywords", [])
+    terms.extend(keywords)
+
+    # Add meaningful title words (skip short/common words)
+    _stopwords = {
+        "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+        "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
+        "been", "being", "have", "has", "had", "do", "does", "did", "will",
+        "would", "could", "should", "may", "might", "can", "shall", "not",
+        "no", "nor", "so", "if", "then", "than", "that", "this", "these",
+        "those", "it", "its", "into", "upon", "about", "between", "through",
+        "during", "before", "after", "above", "below", "each", "every",
+        "all", "both", "few", "more", "most", "other", "some", "such",
+        "only", "own", "same", "also", "just", "how", "what", "which",
+        "who", "whom", "why", "where", "when", "up", "out", "over", "under",
+        "again", "further", "once", "here", "there", "any", "very", "using",
+        "based", "study", "case", "analysis", "approach", "review", "new",
+    }
+    if target.get("title"):
+        title_words = [
+            w for w in target["title"].split()
+            if len(w) > 2 and w.lower().strip(".:,;!?()") not in _stopwords
+        ]
+        terms.extend(title_words[:8])
+
+    if not terms:
+        return []
+
+    # Build an OR query for FTS5
+    fts_query = " OR ".join(
+        f'"{t.replace(chr(34), "")}"' for t in terms if t.strip()
+    )
+    if not fts_query:
+        return []
+
+    sql = """
+        SELECT
+            r.rec_number,
+            r.title,
+            r.authors,
+            r.year,
+            r.journal,
+            r.ref_type,
+            r.doi,
+            r.keywords,
+            bm25(references_fts, 10.0, 5.0, 3.0, 8.0, 2.0) AS rank
+        FROM references_fts
+        JOIN references_ r ON r.rec_number = references_fts.rowid
+        WHERE references_fts MATCH ?
+          AND r.rec_number != ?
+        ORDER BY rank
+        LIMIT ?
+    """
+    rows = conn.execute(sql, [fts_query, rec_number, limit]).fetchall()
+    return [_row_to_ref_summary(row) for row in rows]
+
+
+def get_references_batch(
+    conn: sqlite3.Connection,
+    rec_numbers: list[int],
+) -> list[dict]:
+    """Get full metadata for multiple references in one query.
+
+    Returns dicts in the same format as ``get_reference_details``,
+    ordered by the input ``rec_numbers`` list.
+    """
+    if not rec_numbers:
+        return []
+
+    placeholders = ",".join("?" for _ in rec_numbers)
+    rows = conn.execute(
+        f"SELECT * FROM references_ WHERE rec_number IN ({placeholders})",
+        rec_numbers,
+    ).fetchall()
+
+    # Index by rec_number for ordering
+    by_rn: dict[int, dict] = {}
+    for row in rows:
+        ref = dict(row)
+        ref["authors"] = json.loads(ref["authors"]) if ref["authors"] else []
+        ref["keywords"] = json.loads(ref["keywords"]) if ref["keywords"] else []
+        by_rn[ref["rec_number"]] = ref
+
+    # Return in the order requested
+    return [by_rn[rn] for rn in rec_numbers if rn in by_rn]
+
+
 def _parse_json_list(val: str) -> list[str]:
     try:
         return json.loads(val) if val else []

@@ -1,4 +1,4 @@
-"""MCP server exposing 8 tools for Claude to interact with an EndNote library."""
+"""MCP server exposing 10 tools for Claude to interact with an EndNote library."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from endnote_mcp.search import (
     search_library as _search_lib,
     get_reference_details as _get_details,
     list_by_topic as _list_topic,
+    find_related as _find_related,
+    get_references_batch as _get_refs_batch,
 )
 from endnote_mcp.citation import format_citation, STYLES
 from endnote_mcp.pdf_indexer import find_pdf, read_pages
@@ -324,7 +326,108 @@ def list_references_by_topic(
 
 
 # ====================================================================
-# Tool 8: rebuild_index
+# Tool 8: find_related
+# ====================================================================
+@mcp.tool()
+def find_related(rec_number: int, limit: int = 10) -> str:
+    """Find references related to a given reference.
+
+    Uses shared keywords, title terms, and topics to find similar papers
+    in your library. Useful for literature reviews and discovering
+    connected work.
+
+    Args:
+        rec_number: The record number to find related references for.
+        limit: Maximum results (default 10).
+    """
+    conn = _get_conn()
+    ref = _get_details(conn, rec_number)
+    if ref is None:
+        return f"Reference #{rec_number} not found."
+
+    results = _find_related(conn, rec_number, limit=limit)
+    if not results:
+        return f"No related references found for #{rec_number}."
+
+    title = ref.get("title", "")
+    lines = [f"References related to [{rec_number}] {title}:\n"]
+    for r in results:
+        kw = ", ".join(r["keywords"][:5]) if r.get("keywords") else ""
+        lines.append(
+            f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}."
+            + (f" *{r['journal']}*." if r.get("journal") else "")
+            + (f"  Keywords: {kw}" if kw else "")
+        )
+    return "\n".join(lines)
+
+
+# ====================================================================
+# Tool 9: get_bibliography
+# ====================================================================
+@mcp.tool()
+def get_bibliography(
+    rec_numbers: str,
+    style: str = "apa7",
+    sort: str = "author",
+) -> str:
+    """Generate a formatted bibliography for multiple references.
+
+    Produces a numbered reference list ready for use in a paper or report.
+
+    Args:
+        rec_numbers: Comma-separated record numbers (e.g. "12,45,78,102").
+        style: Citation style — one of: apa7, harvard, vancouver, chicago, ieee.
+        sort: Sort order — "author" (alphabetical) or "year" (chronological).
+    """
+    try:
+        numbers = [int(x.strip()) for x in rec_numbers.split(",") if x.strip()]
+    except ValueError:
+        return "Invalid rec_numbers format. Use comma-separated integers (e.g. '12,45,78')."
+
+    if not numbers:
+        return "No record numbers provided."
+
+    conn = _get_conn()
+    refs = _get_refs_batch(conn, numbers)
+    if not refs:
+        return "None of the specified references were found."
+
+    # Format citations
+    entries: list[dict] = []
+    not_found = set(numbers) - {r["rec_number"] for r in refs}
+    for ref in refs:
+        try:
+            citation = format_citation(ref, style)
+        except ValueError:
+            citation = f"{ref.get('title', 'Unknown title')} (formatting error)"
+        # Extract sort key
+        authors = ref.get("authors", [])
+        first_author = authors[0] if authors else ""
+        entries.append({
+            "citation": citation,
+            "author_sort": first_author.lower(),
+            "year": ref.get("year", ""),
+            "rec_number": ref["rec_number"],
+        })
+
+    # Sort
+    if sort == "year":
+        entries.sort(key=lambda e: (e["year"] or "0", e["author_sort"]))
+    else:
+        entries.sort(key=lambda e: (e["author_sort"], e["year"] or "0"))
+
+    lines = [f"Bibliography ({len(entries)} references, {style.upper()}):\n"]
+    for i, e in enumerate(entries, 1):
+        lines.append(f"  {i}. {e['citation']}")
+
+    if not_found:
+        lines.append(f"\nNot found: {', '.join(str(n) for n in sorted(not_found))}")
+
+    return "\n".join(lines)
+
+
+# ====================================================================
+# Tool 10: rebuild_index
 # ====================================================================
 @mcp.tool()
 def rebuild_index() -> str:
