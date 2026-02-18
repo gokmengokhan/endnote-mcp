@@ -127,7 +127,7 @@ def search_semantic(
         if sim < 0.1:  # skip very low similarity
             continue
         row = conn.execute(
-            "SELECT rec_number, title, authors, year, journal, ref_type, keywords "
+            "SELECT rec_number, title, authors, year, journal, ref_type, doi, keywords "
             "FROM references_ WHERE rec_number = ?",
             (rn,),
         ).fetchone()
@@ -139,6 +139,7 @@ def search_semantic(
                 "year": row["year"],
                 "journal": row["journal"],
                 "ref_type": row["ref_type"],
+                "doi": row["doi"] or "",
                 "keywords": _parse_json_list(row["keywords"] if "keywords" in row.keys() else "[]"),
                 "similarity": sim,
             })

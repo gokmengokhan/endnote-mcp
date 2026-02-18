@@ -27,6 +27,16 @@ from endnote_mcp.pdf_indexer import find_pdf, read_pages
 
 logger = logging.getLogger(__name__)
 
+
+def _doi_link(doi: str) -> str:
+    """Format a DOI as a clickable link, or return empty string."""
+    if not doi:
+        return ""
+    doi = doi.strip()
+    if doi.startswith("http"):
+        return f"  DOI: {doi}"
+    return f"  DOI: https://doi.org/{doi}"
+
 mcp = FastMCP(
     "EndNote Library",
     instructions="Search, cite, and read PDFs from your EndNote reference library.",
@@ -86,6 +96,7 @@ def search_references(
         lines.append(
             f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}."
             + (f" *{r['journal']}*." if r.get("journal") else "")
+            + _doi_link(r.get("doi", ""))
             + (f"  Keywords: {kw}" if kw else "")
         )
     return "\n".join(lines)
@@ -115,6 +126,7 @@ def search_fulltext(query: str, limit: int = 50) -> str:
     for r in results:
         lines.append(
             f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}"
+            + _doi_link(r.get("doi", ""))
         )
         for s in r["snippets"]:
             lines.append(f"      — page {s['page']}: ...{s['snippet']}...")
@@ -162,6 +174,7 @@ def search_library(
         lines.append(
             f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}."
             + (f" *{r['journal']}*." if r.get("journal") else "")
+            + _doi_link(r.get("doi", ""))
         )
         if kw:
             lines.append(f"    Keywords: {kw}")
@@ -328,6 +341,7 @@ def list_references_by_topic(
         lines.append(
             f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}."
             + (f" *{r['journal']}*." if r.get("journal") else "")
+            + _doi_link(r.get("doi", ""))
             + (f"  Keywords: {kw}" if kw else "")
         )
     return "\n".join(lines)
@@ -364,6 +378,7 @@ def find_related(rec_number: int, limit: int = 10) -> str:
         lines.append(
             f"  [{r['rec_number']}] {r['authors']} ({r['year']}). {r['title']}."
             + (f" *{r['journal']}*." if r.get("journal") else "")
+            + _doi_link(r.get("doi", ""))
             + (f"  Keywords: {kw}" if kw else "")
         )
     return "\n".join(lines)
@@ -480,6 +495,7 @@ def search_semantic(query: str, limit: int = 20) -> str:
         lines.append(
             f"  [{r['rec_number']}] ({sim_pct}) {r['authors']} ({r['year']}). {r['title']}."
             + (f" *{r['journal']}*." if r.get("journal") else "")
+            + _doi_link(r.get("doi", ""))
             + (f"  Keywords: {kw}" if kw else "")
         )
     return "\n".join(lines)

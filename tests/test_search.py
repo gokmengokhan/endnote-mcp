@@ -127,6 +127,20 @@ def test_find_related_fts(populated_db):
 
 # ---- Helpers ----
 
+def test_search_references_has_doi(populated_db):
+    results = search_references(populated_db, "social capital")
+    matching = [r for r in results if r["rec_number"] == 1]
+    assert len(matching) == 1
+    assert matching[0]["doi"] == "10.1000/socrev.2018"
+
+
+def test_search_fulltext_has_doi(populated_db):
+    results = search_fulltext(populated_db, "habitus")
+    matching = [r for r in results if r["rec_number"] == 1]
+    assert len(matching) == 1
+    assert matching[0]["doi"] == "10.1000/socrev.2018"
+
+
 def test_parse_authors_short_single():
     assert _parse_authors_short('["Smith, J."]') == "Smith, J."
 

@@ -93,6 +93,7 @@ def search_fulltext(
             r.authors,
             r.year,
             r.journal,
+            r.doi,
             r.keywords,
             snippet(pdf_fts, 0, '>>>', '<<<', '...', 400) AS snippet,
             bm25(pdf_fts) AS rank
@@ -116,6 +117,7 @@ def search_fulltext(
                 "authors": _parse_authors_short(row["authors"]),
                 "year": row["year"],
                 "journal": row["journal"],
+                "doi": row["doi"] or "",
                 "keywords": _parse_json_list(
                     row["keywords"] if "keywords" in row.keys() else "[]"
                 ),
@@ -175,6 +177,7 @@ def list_by_topic(
             r.year,
             r.journal,
             r.ref_type,
+            r.doi,
             r.keywords,
             bm25(references_fts, 10.0, 5.0, 3.0, 8.0, 2.0) AS rank
         FROM references_fts
@@ -277,7 +280,7 @@ def search_library(
 
 def _row_to_ref_summary(row: sqlite3.Row) -> dict:
     """Convert a DB row to a summary dict for display."""
-    return {
+    result = {
         "rec_number": row["rec_number"],
         "title": row["title"],
         "authors": _parse_authors_short(row["authors"]),
@@ -286,6 +289,9 @@ def _row_to_ref_summary(row: sqlite3.Row) -> dict:
         "ref_type": row["ref_type"],
         "keywords": _parse_json_list(row["keywords"] if "keywords" in row.keys() else "[]"),
     }
+    if "doi" in row.keys():
+        result["doi"] = row["doi"] or ""
+    return result
 
 
 def _parse_authors_short(authors_json: str) -> str:
