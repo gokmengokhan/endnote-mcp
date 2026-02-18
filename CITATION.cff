@@ -6,8 +6,8 @@ authors:
   - family-names: Gokmen
     given-names: Gokhan
     orcid: "https://orcid.org/0000-0001-8883-1770"
-version: 1.1.0
-date-released: "2026-02-13"
+version: 1.3.0
+date-released: "2026-02-18"
 doi: "10.5281/zenodo.18617547"
 url: "https://github.com/gokmengokhan/endnote-mcp"
 repository-code: "https://github.com/gokmengokhan/endnote-mcp"
@@ -21,9 +21,14 @@ keywords:
   - academic research
   - literature review
   - pdf search
+  - semantic search
+  - embeddings
+  - bibliography
 abstract: >-
   An MCP (Model Context Protocol) server that connects EndNote reference
   libraries to Claude AI. Enables researchers to search references, read
-  PDFs, and format citations directly within Claude Desktop conversations.
-  Supports full-text search across PDF content, BM25-ranked metadata search,
-  and five citation styles (APA 7th, Harvard, Vancouver, Chicago, IEEE).
+  PDFs, format citations, find related papers, and generate bibliographies
+  directly within Claude Desktop conversations. Supports full-text search
+  across PDF content, BM25-ranked metadata search, AI-powered semantic
+  search using sentence-transformers embeddings, and five citation styles
+  (APA 7th, Harvard, Vancouver, Chicago, IEEE).
