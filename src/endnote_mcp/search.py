@@ -268,6 +268,27 @@ def _parse_authors_short(authors_json: str) -> str:
     return f"{authors[0]} et al."
 
 
+def search_semantic(
+    conn: sqlite3.Connection,
+    query: str,
+    *,
+    limit: int = 20,
+) -> list[dict]:
+    """Search references by semantic similarity using embeddings.
+
+    Requires sentence-transformers to be installed (endnote-mcp[semantic]).
+    Returns results in the same format as ``search_references()``.
+    """
+    from endnote_mcp import embeddings
+
+    if not embeddings.is_available():
+        return []
+
+    model = embeddings.load_model()
+    query_emb = embeddings.encode_text(model, query)
+    return embeddings.search_semantic(conn, query_emb, limit=limit)
+
+
 def find_related(
     conn: sqlite3.Connection,
     rec_number: int,
@@ -276,9 +297,32 @@ def find_related(
 ) -> list[dict]:
     """Find references related to a given reference.
 
-    Builds an FTS query from the target reference's keywords and title
-    terms, then searches the library for similar references.
+    Uses embedding similarity when available, falls back to FTS keyword matching.
     """
+    # Try embedding-based search first
+    try:
+        from endnote_mcp import embeddings
+
+        if embeddings.is_available() and embeddings.has_embeddings(conn):
+            emb = embeddings.get_embedding(conn, rec_number)
+            if emb is not None:
+                return embeddings.search_by_embedding(
+                    conn, emb, exclude_rec=rec_number, limit=limit,
+                )
+    except Exception:
+        pass  # Fall through to FTS
+
+    # Fallback: FTS keyword matching
+    return _find_related_fts(conn, rec_number, limit=limit)
+
+
+def _find_related_fts(
+    conn: sqlite3.Connection,
+    rec_number: int,
+    *,
+    limit: int = 10,
+) -> list[dict]:
+    """Find related references using FTS5 keyword matching (fallback)."""
     target = get_reference_details(conn, rec_number)
     if target is None:
         return []

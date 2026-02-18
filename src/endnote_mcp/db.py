@@ -120,6 +120,13 @@ def _create_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_references_year ON references_(year);
         CREATE INDEX IF NOT EXISTS idx_references_doi ON references_(doi);
         CREATE INDEX IF NOT EXISTS idx_pdf_pages_rec ON pdf_pages(rec_number);
+
+        -- Embedding vectors for semantic search
+        CREATE TABLE IF NOT EXISTS reference_embeddings (
+            rec_number  INTEGER PRIMARY KEY REFERENCES references_(rec_number) ON DELETE CASCADE,
+            embedding   BLOB NOT NULL,
+            model_name  TEXT NOT NULL
+        );
     """)
 
 
@@ -149,12 +156,27 @@ def insert_pdf_page(conn: sqlite3.Connection, rec_number: int, page_number: int,
 def clear_all(conn: sqlite3.Connection) -> None:
     """Drop all data for a full re-index."""
     conn.executescript("""
+        DELETE FROM reference_embeddings;
         DELETE FROM pdf_pages;
         DELETE FROM references_;
         -- Rebuild FTS indexes
         INSERT INTO references_fts(references_fts) VALUES('rebuild');
         INSERT INTO pdf_fts(pdf_fts) VALUES('rebuild');
     """)
+
+
+def upsert_embedding(conn: sqlite3.Connection, rec_number: int, embedding: bytes, model_name: str) -> None:
+    """Insert or replace an embedding vector for a reference."""
+    conn.execute(
+        "INSERT OR REPLACE INTO reference_embeddings(rec_number, embedding, model_name) VALUES (?, ?, ?)",
+        (rec_number, embedding, model_name),
+    )
+
+
+def clear_embeddings(conn: sqlite3.Connection) -> None:
+    """Delete all embeddings."""
+    conn.execute("DELETE FROM reference_embeddings")
+    conn.commit()
 
 
 def get_stats(conn: sqlite3.Connection) -> dict:
@@ -164,8 +186,10 @@ def get_stats(conn: sqlite3.Connection) -> dict:
     refs_with_pdf = conn.execute(
         "SELECT COUNT(DISTINCT rec_number) FROM pdf_pages"
     ).fetchone()[0]
+    embeddings_count = conn.execute("SELECT COUNT(*) FROM reference_embeddings").fetchone()[0]
     return {
         "total_references": ref_count,
         "total_pdf_pages": pdf_page_count,
         "references_with_pdf": refs_with_pdf,
+        "references_with_embeddings": embeddings_count,
     }

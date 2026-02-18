@@ -3,6 +3,7 @@
 Commands:
     endnote-mcp setup    — Interactive setup wizard (finds your library, configures paths)
     endnote-mcp index    — Index your library (incremental by default)
+    endnote-mcp embed    — Generate semantic search embeddings
     endnote-mcp serve    — Start the MCP server (used by Claude Desktop)
     endnote-mcp status   — Show index statistics
     endnote-mcp install  — Add MCP server to Claude Desktop config
@@ -109,8 +110,9 @@ def setup():
 @cli.command()
 @click.option("--full", is_flag=True, help="Full re-index (clear and rebuild from scratch)")
 @click.option("--skip-pdfs", is_flag=True, help="Skip PDF text extraction (metadata only)")
+@click.option("--embed", is_flag=True, help="Also generate semantic search embeddings (requires endnote-mcp[semantic])")
 @click.option("--config", type=click.Path(exists=True), help="Path to config.yaml")
-def index(full, skip_pdfs, config):
+def index(full, skip_pdfs, embed, config):
     """Index your EndNote library into the search database.
 
     By default, runs incrementally — only processes new references and PDFs.
@@ -120,6 +122,8 @@ def index(full, skip_pdfs, config):
         click.secho("No configuration found. Run 'endnote-mcp setup' first.", fg="red")
         raise SystemExit(1)
     _run_index(config_path, full=full, skip_pdfs=skip_pdfs)
+    if embed:
+        _run_embed(config_path, full=full)
 
 
 # ====================================================================
@@ -164,7 +168,32 @@ def status(config):
     click.echo(f"  References:        {stats['total_references']:,}")
     click.echo(f"  PDFs indexed:      {stats['references_with_pdf']:,}")
     click.echo(f"  PDF pages:         {stats['total_pdf_pages']:,}")
+    emb = stats.get('references_with_embeddings', 0)
+    if emb:
+        click.echo(f"  Embeddings:        {emb:,}")
+    else:
+        click.echo(f"  Embeddings:        0  (run 'endnote-mcp embed' to enable semantic search)")
     click.echo()
+
+
+# ====================================================================
+# embed — Generate semantic search embeddings
+# ====================================================================
+@cli.command()
+@click.option("--full", is_flag=True, help="Regenerate all embeddings from scratch")
+@click.option("--config", type=click.Path(exists=True), help="Path to config.yaml")
+def embed(full, config):
+    """Generate semantic search embeddings for your references.
+
+    Requires: pip install endnote-mcp[semantic]
+
+    By default, only embeds references that don't have embeddings yet.
+    """
+    config_path = config or get_default_config_path()
+    if not Path(config_path).exists():
+        click.secho("No configuration found. Run 'endnote-mcp setup' first.", fg="red")
+        raise SystemExit(1)
+    _run_embed(config_path, full=full)
 
 
 # ====================================================================
@@ -179,6 +208,92 @@ def install():
 # ====================================================================
 # Helpers
 # ====================================================================
+
+def _run_embed(config_path, *, full=False):
+    """Generate embeddings for references."""
+    from endnote_mcp import embeddings
+
+    if not embeddings.is_available():
+        click.secho(
+            "Semantic search dependencies not installed.\n"
+            "Install with:  pip install endnote-mcp[semantic]",
+            fg="red",
+        )
+        raise SystemExit(1)
+
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+    from endnote_mcp.config import Config
+    from endnote_mcp.db import connect, upsert_embedding, clear_embeddings
+
+    cfg = Config.load(config_path)
+    conn = connect(cfg.db_path)
+
+    if full:
+        click.echo("Clearing existing embeddings...")
+        clear_embeddings(conn)
+
+    # Find references without embeddings
+    rows = conn.execute("""
+        SELECT r.rec_number, r.title, r.abstract, r.keywords
+        FROM references_ r
+        WHERE r.rec_number NOT IN (SELECT rec_number FROM reference_embeddings)
+    """).fetchall()
+
+    if not rows:
+        click.echo("  All references already have embeddings.")
+        conn.close()
+        return
+
+    click.echo(f"Loading embedding model ({embeddings.MODEL_NAME})...")
+    model = embeddings.load_model()
+
+    click.echo(f"Generating embeddings for {len(rows)} references...")
+
+    batch_size = 64
+    embedded = 0
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+    ) as progress:
+        task = progress.add_task("Embedding references...", total=len(rows))
+
+        for i in range(0, len(rows), batch_size):
+            batch_rows = rows[i:i + batch_size]
+
+            texts = []
+            rec_numbers = []
+            for row in batch_rows:
+                ref = {
+                    "title": row["title"],
+                    "abstract": row["abstract"],
+                    "keywords": row["keywords"],
+                }
+                text = embeddings.build_search_text(ref)
+                if text.strip():
+                    texts.append(text)
+                    rec_numbers.append(row["rec_number"])
+
+            if texts:
+                blobs = embeddings.encode_batch(model, texts)
+                for rn, blob in zip(rec_numbers, blobs):
+                    upsert_embedding(conn, rn, blob, embeddings.MODEL_NAME)
+                embedded += len(blobs)
+
+            progress.update(task, advance=len(batch_rows),
+                           description=f"Embedding references... {embedded} done")
+
+            if (i + batch_size) % (batch_size * 2) == 0:
+                conn.commit()
+
+    conn.commit()
+    conn.close()
+
+    click.secho(f"  ✓ {embedded:,} embeddings generated", fg="green")
+
 
 def _find_endnote_libraries() -> list[Path]:
     """Auto-detect EndNote library files on the system."""

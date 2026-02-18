@@ -1,4 +1,4 @@
-"""MCP server exposing 10 tools for Claude to interact with an EndNote library."""
+"""MCP server exposing 11 tools for Claude to interact with an EndNote library."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from endnote_mcp.search import (
     list_by_topic as _list_topic,
     find_related as _find_related,
     get_references_batch as _get_refs_batch,
+    search_semantic as _search_semantic,
 )
 from endnote_mcp.citation import format_citation, STYLES
 from endnote_mcp.pdf_indexer import find_pdf, read_pages
@@ -427,7 +428,58 @@ def get_bibliography(
 
 
 # ====================================================================
-# Tool 10: rebuild_index
+# Tool 10: search_semantic
+# ====================================================================
+@mcp.tool()
+def search_semantic(query: str, limit: int = 20) -> str:
+    """Search your library by meaning, not just keywords.
+
+    Uses AI embeddings to find references related to your query even when
+    they use different terminology. For example, searching "how companies
+    prepare for uncertain futures" will find papers on scenario planning,
+    strategic foresight, and risk management.
+
+    Requires: pip install endnote-mcp[semantic]
+
+    Args:
+        query: Describe what you're looking for in natural language.
+        limit: Maximum results (default 20).
+    """
+    from endnote_mcp import embeddings
+
+    if not embeddings.is_available():
+        return (
+            "Semantic search is not available. Install the required dependencies:\n"
+            "  pip install endnote-mcp[semantic]\n"
+            "Then run: endnote-mcp embed"
+        )
+
+    conn = _get_conn()
+
+    if not embeddings.has_embeddings(conn):
+        return (
+            "No embeddings found. Generate them first:\n"
+            "  endnote-mcp embed"
+        )
+
+    results = _search_semantic(conn, query, limit=limit)
+    if not results:
+        return f"No semantic matches for: {query}"
+
+    lines = [f"Found {len(results)} reference(s) by semantic similarity:\n"]
+    for r in results:
+        sim_pct = f"{r.get('similarity', 0):.0%}"
+        kw = ", ".join(r["keywords"][:5]) if r.get("keywords") else ""
+        lines.append(
+            f"  [{r['rec_number']}] ({sim_pct}) {r['authors']} ({r['year']}). {r['title']}."
+            + (f" *{r['journal']}*." if r.get("journal") else "")
+            + (f"  Keywords: {kw}" if kw else "")
+        )
+    return "\n".join(lines)
+
+
+# ====================================================================
+# Tool 11: rebuild_index
 # ====================================================================
 @mcp.tool()
 def rebuild_index() -> str:
