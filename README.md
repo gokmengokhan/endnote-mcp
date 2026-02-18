@@ -1,5 +1,10 @@
 # EndNote MCP
 
+[![Tests](https://github.com/gokmengokhan/endnote-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/gokmengokhan/endnote-mcp/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/endnote-mcp)](https://pypi.org/project/endnote-mcp/)
+[![Python](https://img.shields.io/pypi/pyversions/endnote-mcp)](https://pypi.org/project/endnote-mcp/)
+[![License](https://img.shields.io/pypi/l/endnote-mcp)](https://github.com/gokmengokhan/endnote-mcp/blob/main/LICENSE)
+
 <!-- mcp-name: io.github.gokmengokhan/endnote-mcp -->
 
 Connect your EndNote reference library to Claude AI. Search references, read PDFs, format citations, find related papers, and generate bibliographies — all directly in Claude Desktop conversations.
@@ -102,7 +107,7 @@ This uses the lightweight [all-MiniLM-L6-v2](https://huggingface.co/sentence-tra
 
 | Tool | Description |
 |------|-------------|
-| `search_references` | Search by author, title, year, keywords, abstract (BM25 ranked) |
+| `search_references` | Search by author, title, year, keywords, abstract (BM25 ranked, with DOI links) |
 | `search_fulltext` | Search inside PDF content — find concepts, quotes, methods |
 | `search_library` | Combined metadata + PDF search in one call |
 | `search_semantic` | Search by meaning using AI embeddings (requires `endnote-mcp[semantic]`) |
@@ -190,7 +195,7 @@ Generates complete entries with proper entry types (`@article`, `@book`, `@inpro
 
 If you use this tool in your research, please cite it:
 
-> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.0) [Computer software]. https://doi.org/10.5281/zenodo.18617547
+> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.1) [Computer software]. https://doi.org/10.5281/zenodo.18617547
 
 Or use the "Cite this repository" button on GitHub for BibTeX/APA formats.
 
