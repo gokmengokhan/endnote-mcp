@@ -13,6 +13,7 @@ Once set up, you can ask Claude things like:
 - *"Find references related to paper #3844"*
 - *"Give me the APA citation for reference #1234"*
 - *"Generate a bibliography for references 12, 45, 78, 102"*
+- *"Export references 12, 45, 78 as BibTeX"*
 - *"Read pages 5-7 from that Smith et al. paper"*
 
 Claude searches your **local** library — nothing is uploaded to the cloud beyond the normal conversation.
@@ -22,10 +23,10 @@ Claude searches your **local** library — nothing is uploaded to the cloud beyo
 ```
 EndNote Library → XML Export → endnote-mcp index → SQLite Database (FTS5 + Embeddings)
                                                           ↕
-                                   Claude Desktop ← MCP Server (11 tools)
+                                   Claude Desktop ← MCP Server (12 tools)
 ```
 
-Your references and PDF text are indexed into a local SQLite database with full-text search. Optionally, AI embeddings enable semantic search — finding papers by meaning, not just keywords. Claude connects through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
+Your references and PDF text are indexed into a local SQLite database with full-text search. Optionally, AI embeddings enable semantic search — finding papers by meaning, not just keywords. When semantic dependencies are installed, new references are automatically embedded during indexing. Claude connects through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 
 ## Requirements
 
@@ -107,6 +108,7 @@ This uses the lightweight [all-MiniLM-L6-v2](https://huggingface.co/sentence-tra
 | `search_semantic` | Search by meaning using AI embeddings (requires `endnote-mcp[semantic]`) |
 | `get_reference_details` | Full metadata for a reference (abstract, keywords, DOI, etc.) |
 | `get_citation` | Format as APA 7th, Harvard, Vancouver, Chicago, or IEEE |
+| `get_bibtex` | Export references as BibTeX entries for LaTeX |
 | `get_bibliography` | Generate a formatted bibliography for multiple references |
 | `find_related` | Find similar references (uses embeddings when available) |
 | `read_pdf_section` | Read specific pages from a PDF attachment |
@@ -122,7 +124,7 @@ When you add new references to your EndNote library:
    - Run `endnote-mcp index` from a terminal, **or**
    - Ask Claude: *"Rebuild my library index"*
 
-Indexing is **incremental** — it only processes new references and PDFs, not the entire library again.
+Indexing is **incremental** — it only processes new references and PDFs, not the entire library again. If semantic search is installed, new references are automatically embedded.
 
 ## Performance
 
@@ -161,6 +163,15 @@ Five built-in styles:
 
 Use `get_bibliography` to format multiple references at once, sorted by author or year.
 
+## BibTeX Export
+
+Export references as BibTeX entries for use in LaTeX:
+
+- Ask Claude: *"Export references 42 and 100 as BibTeX"*
+- Or use the `get_bibtex` tool directly with comma-separated record numbers
+
+Generates complete entries with proper entry types (`@article`, `@book`, `@inproceedings`, etc.), cite keys, and all available fields.
+
 ## Troubleshooting
 
 **"No configuration found"** — Run `endnote-mcp setup`
@@ -179,7 +190,7 @@ Use `get_bibliography` to format multiple references at once, sorted by author o
 
 If you use this tool in your research, please cite it:
 
-> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.3.0) [Computer software]. https://doi.org/10.5281/zenodo.18617547
+> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.0) [Computer software]. https://doi.org/10.5281/zenodo.18617547
 
 Or use the "Cite this repository" button on GitHub for BibTeX/APA formats.
 
