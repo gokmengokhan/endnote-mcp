@@ -50,7 +50,7 @@ def _build_pdf_cache(pdf_dir: Path) -> None:
         return
     logger.info("Building PDF file cache for %s...", pdf_dir)
     _pdf_cache = {}
-    for path in pdf_dir.rglob("*.pdf"):
+    for path in pdf_dir.rglob("*.[pP][dD][fF]"):
         _pdf_cache[path.name] = path
         # Also index URL-decoded name
         decoded = unquote(path.name)
