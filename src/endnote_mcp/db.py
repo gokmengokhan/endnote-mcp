@@ -131,9 +131,13 @@ def _create_schema(conn: sqlite3.Connection) -> None:
 
 
 def upsert_reference(conn: sqlite3.Connection, ref: dict) -> None:
-    """Insert or replace a reference record."""
+    """Insert or update a reference record.
+
+    Uses ON CONFLICT DO UPDATE instead of INSERT OR REPLACE to avoid
+    triggering ON DELETE CASCADE on pdf_pages and reference_embeddings.
+    """
     conn.execute("""
-        INSERT OR REPLACE INTO references_(
+        INSERT INTO references_(
             rec_number, ref_type, title, authors, year, journal,
             volume, issue, pages, abstract, keywords, doi, url,
             publisher, place_published, edition, isbn, label, notes, pdf_path
@@ -142,6 +146,17 @@ def upsert_reference(conn: sqlite3.Connection, ref: dict) -> None:
             :volume, :issue, :pages, :abstract, :keywords, :doi, :url,
             :publisher, :place_published, :edition, :isbn, :label, :notes, :pdf_path
         )
+        ON CONFLICT(rec_number) DO UPDATE SET
+            ref_type=excluded.ref_type, title=excluded.title,
+            authors=excluded.authors, year=excluded.year,
+            journal=excluded.journal, volume=excluded.volume,
+            issue=excluded.issue, pages=excluded.pages,
+            abstract=excluded.abstract, keywords=excluded.keywords,
+            doi=excluded.doi, url=excluded.url,
+            publisher=excluded.publisher, place_published=excluded.place_published,
+            edition=excluded.edition, isbn=excluded.isbn,
+            label=excluded.label, notes=excluded.notes,
+            pdf_path=excluded.pdf_path
     """, ref)
 
 
