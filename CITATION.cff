@@ -6,8 +6,8 @@ authors:
   - family-names: Gokmen
     given-names: Gokhan
     orcid: "https://orcid.org/0000-0001-8883-1770"
-version: 1.4.1
-date-released: "2026-02-18"
+version: 1.4.2
+date-released: "2026-02-26"
 doi: "10.5281/zenodo.18617547"
 url: "https://github.com/gokmengokhan/endnote-mcp"
 repository-code: "https://github.com/gokmengokhan/endnote-mcp"
