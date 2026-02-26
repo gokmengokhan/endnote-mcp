@@ -11,8 +11,6 @@ import struct
 import sqlite3
 from typing import Any
 
-import numpy as np
-
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "all-MiniLM-L6-v2"
@@ -22,8 +20,9 @@ _model = None
 
 
 def is_available() -> bool:
-    """Check if sentence-transformers is installed."""
+    """Check if semantic search dependencies are installed."""
     try:
+        import numpy  # noqa: F401
         import sentence_transformers  # noqa: F401
         return True
     except ImportError:
@@ -45,12 +44,14 @@ def load_model(model_name: str = MODEL_NAME):
 
 def encode_text(model, text: str) -> bytes:
     """Encode a single text string to float32 bytes."""
+    import numpy as np
     vec = model.encode(text, normalize_embeddings=True)
     return vec.astype(np.float32).tobytes()
 
 
 def encode_batch(model, texts: list[str]) -> list[bytes]:
     """Encode a batch of texts to float32 bytes."""
+    import numpy as np
     vecs = model.encode(texts, normalize_embeddings=True, batch_size=64)
     return [v.astype(np.float32).tobytes() for v in vecs]
 
@@ -74,8 +75,9 @@ def build_search_text(ref: dict) -> str:
     return " ".join(parts)
 
 
-def _blob_to_array(blob: bytes) -> np.ndarray:
+def _blob_to_array(blob: bytes):
     """Convert a float32 bytes blob to a numpy array."""
+    import numpy as np
     return np.frombuffer(blob, dtype=np.float32)
 
 
@@ -106,6 +108,8 @@ def search_semantic(
         return []
 
     query_vec = _blob_to_array(query_embedding)
+
+    import numpy as np
 
     # Build matrix of all embeddings for vectorized computation
     rec_numbers = [row["rec_number"] for row in rows]

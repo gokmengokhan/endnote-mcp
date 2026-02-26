@@ -195,7 +195,7 @@ Generates complete entries with proper entry types (`@article`, `@book`, `@inpro
 
 If you use this tool in your research, please cite it:
 
-> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.3) [Computer software]. https://doi.org/10.5281/zenodo.18617546
+> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.4) [Computer software]. https://doi.org/10.5281/zenodo.18617546
 
 Or use the "Cite this repository" button on GitHub for BibTeX/APA formats.
 

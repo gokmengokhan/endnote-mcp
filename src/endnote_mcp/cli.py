@@ -219,7 +219,8 @@ def _run_embed(config_path, *, full=False):
     if not embeddings.is_available():
         click.secho(
             "Semantic search dependencies not installed.\n"
-            "Install with:  pip install endnote-mcp[semantic]",
+            "Install with:  uv tool install endnote-mcp[semantic]\n"
+            "         or:   pip install endnote-mcp[semantic]",
             fg="red",
         )
         raise SystemExit(1)
