@@ -83,6 +83,7 @@ def _blob_to_array(blob: bytes):
 
 def cosine_similarity(a: bytes, b: bytes) -> float:
     """Compute cosine similarity between two embedding blobs."""
+    import numpy as np
     va = _blob_to_array(a)
     vb = _blob_to_array(b)
     # Vectors are already normalized, so dot product = cosine similarity
