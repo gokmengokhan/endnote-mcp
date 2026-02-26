@@ -1,6 +1,6 @@
 # EndNote MCP
 
-[![Tests](https://github.com/gokmengokhan/endnote-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/gokmengokhan/endnote-mcp/actions/workflows/test.yml)
+[![Tests](https://github.com/gokmengokhan/endnote-mcp/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/gokmengokhan/endnote-mcp/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/endnote-mcp)](https://pypi.org/project/endnote-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/endnote-mcp)](https://pypi.org/project/endnote-mcp/)
 [![License](https://img.shields.io/pypi/l/endnote-mcp)](https://github.com/gokmengokhan/endnote-mcp/blob/main/LICENSE)
