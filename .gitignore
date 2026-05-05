@@ -25,3 +25,7 @@ config.yaml
 
 # uv
 uv.lock
+
+# DXT build artifacts (synced from src/ on each build)
+dxt/src/endnote_mcp/
+dxt/.venv/
