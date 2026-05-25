@@ -7,6 +7,7 @@ import logging
 import os
 import signal
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Generator
 from urllib.parse import unquote
@@ -51,11 +52,19 @@ def _build_pdf_cache(pdf_dir: Path) -> None:
     logger.info("Building PDF file cache for %s...", pdf_dir)
     _pdf_cache = {}
     for path in pdf_dir.rglob("*.[pP][dD][fF]"):
-        _pdf_cache[path.name] = path
-        # Also index URL-decoded name
-        decoded = unquote(path.name)
-        if decoded != path.name:
+        # macOS APFS stores filenames in NFD; XML exports them in NFC.
+        # Index both forms so lookups match regardless of normalization.
+        name = path.name
+        _pdf_cache[name] = path
+        nfc_name = unicodedata.normalize("NFC", name)
+        if nfc_name != name:
+            _pdf_cache[nfc_name] = path
+        decoded = unquote(name)
+        if decoded != name:
             _pdf_cache[decoded] = path
+            nfc_decoded = unicodedata.normalize("NFC", decoded)
+            if nfc_decoded != decoded:
+                _pdf_cache[nfc_decoded] = path
     _pdf_cache_dir = pdf_dir
     logger.info("Cached %d PDF files.", len(_pdf_cache))
 
@@ -165,11 +174,23 @@ def find_pdf(pdf_dir: Path, pdf_filename: str) -> Path | None:
     if result:
         return result
 
+    # Try NFC normalization (XML is NFC, macOS filenames are NFD)
+    nfc = unicodedata.normalize("NFC", pdf_filename)
+    if nfc != pdf_filename:
+        result = _pdf_cache.get(nfc)
+        if result:
+            return result
+
     # Try URL-decoded name
     decoded = unquote(pdf_filename)
     if decoded != pdf_filename:
         result = _pdf_cache.get(decoded)
         if result:
             return result
+        nfc_decoded = unicodedata.normalize("NFC", decoded)
+        if nfc_decoded != decoded:
+            result = _pdf_cache.get(nfc_decoded)
+            if result:
+                return result
 
     return None
