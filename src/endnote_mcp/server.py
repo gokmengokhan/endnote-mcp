@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -551,10 +552,16 @@ def rebuild_index() -> str:
     """
     try:
         cfg = _get_config()
+        # Force UTF-8 in subprocess stdio so non-ASCII output doesn't crash
+        # on Windows code pages (cp950 zh-TW, cp932 ja, cp949 ko, etc.).
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
         result = subprocess.run(
             [sys.executable, "-m", "endnote_mcp.cli", "index"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
             timeout=7200,  # 2 hour timeout for large libraries
         )
         output = result.stdout

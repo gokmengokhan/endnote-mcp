@@ -24,6 +24,14 @@ import yaml
 
 from endnote_mcp.config import Config, get_config_dir, get_default_config_path
 
+# Force UTF-8 stdio so non-ASCII output (✓, progress glyphs, Unicode filenames)
+# doesn't crash on Windows code pages like cp950 (zh-TW), cp932 (ja), cp949 (ko).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
 
 # ====================================================================
 # Main group
