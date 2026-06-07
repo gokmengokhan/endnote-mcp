@@ -334,35 +334,80 @@ def _auto_embed(config_path):
         _run_embed(config_path, full=False)
 
 
-def _find_endnote_libraries() -> list[Path]:
-    """Auto-detect EndNote library files on the system."""
-    candidates = []
-    home = Path.home()
+# Directories that are enormous, cloud-backed (iCloud/Dropbox/OneDrive), or
+# simply never hold a user's working EndNote library. Pruning these is what
+# keeps auto-detection from stalling: on a fresh Mac mid-iCloud-sync, recursively
+# globbing ~/Library or a CloudStorage tree blocks for minutes on dataless
+# placeholder files that have to be fetched over the network (issue #4).
+_SKIP_DIR_NAMES = {
+    "Library",  # ~/Library only ever yields EndNote's cache/backup copies
+    "Caches", "CloudStorage", "Containers", "Group Containers",
+    "Mobile Documents", "Application Support", "Logs", "Mail", "Messages",
+    "node_modules", "__pycache__", "venv", ".venv",
+}
+# Package-style directories: treat as opaque leaves — never descend into them.
+_SKIP_DIR_SUFFIXES = (
+    ".enlp", ".enl", ".Data",
+    ".photoslibrary", ".musiclibrary", ".tvlibrary", ".aplibrary",
+    ".app", ".bundle",
+)
 
-    search_dirs = [
-        home / "Documents",
-        home / "Desktop",
-        home / "Downloads",
-    ]
 
-    # Also check common macOS/Windows locations
-    if platform.system() == "Darwin":
-        search_dirs.append(home / "Library")
-    elif platform.system() == "Windows":
-        search_dirs.append(Path(os.environ.get("APPDATA", "")))
+def _scan_for_libraries(
+    roots: list[Path], *, max_depth: int = 5, time_budget: float = 8.0
+) -> list[Path]:
+    """Walk `roots` for .enlp/.enl libraries without ever hanging.
 
-    for d in search_dirs:
-        if not d.exists():
+    Uses os.walk with in-place pruning of cloud/cache/package directories,
+    a per-root depth limit, and a wall-clock budget. If the budget runs out
+    (e.g. iCloud placeholders are blocking on the network) it returns whatever
+    has been found so far rather than blocking — the wizard then falls back to
+    asking for the path manually.
+    """
+    found: list[Path] = []
+    deadline = time.monotonic() + time_budget
+    for root in roots:
+        if not root.exists():
             continue
-        # Look for .enlp (EndNote library package) and .enl files
-        for pattern in ("**/*.enlp", "**/*.enl"):
-            try:
-                for path in d.glob(pattern):
-                    candidates.append(path)
-            except PermissionError:
+        base_depth = len(root.parts)
+        for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+            if time.monotonic() > deadline:
+                return found  # out of time — bail with what we have
+            here = Path(dirpath)
+            # Record libraries at this level (.enlp is a dir, .enl a file).
+            found.extend(here / d for d in dirnames if d.endswith(".enlp"))
+            found.extend(here / f for f in filenames if f.endswith(".enl"))
+            # Enforce the depth limit relative to this search root.
+            if len(here.parts) - base_depth >= max_depth:
+                dirnames[:] = []
                 continue
+            # Prune heavy / cloud / hidden / package dirs in place so os.walk
+            # does not descend into them.
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in _SKIP_DIR_NAMES
+                and not d.startswith(".")
+                and not d.endswith(_SKIP_DIR_SUFFIXES)
+            ]
+    return found
 
-    return sorted(set(candidates))
+
+def _find_endnote_libraries(extra_dirs: list[Path] | None = None) -> list[Path]:
+    """Auto-detect EndNote library files in the usual locations.
+
+    Scans Documents/Desktop/Downloads (plus any `extra_dirs`, e.g. the folder
+    holding the chosen XML export). Deliberately excludes ~/Library: it only
+    ever yields EndNote's cache/backup copies, and recursively globbing it on a
+    fresh Mac with iCloud sync would hang the setup wizard (issue #4).
+    """
+    home = Path.home()
+    roots = [home / "Documents", home / "Desktop", home / "Downloads"]
+    if extra_dirs:
+        roots.extend(extra_dirs)
+    # De-dup roots while preserving order.
+    seen: set[Path] = set()
+    roots = [r for r in roots if not (r in seen or seen.add(r))]
+    return sorted(set(_scan_for_libraries(roots)))
 
 
 def _find_xml_exports() -> list[Path]:
@@ -387,29 +432,54 @@ def _find_xml_exports() -> list[Path]:
 
 
 def _find_pdf_dir_for_library(library_path: Path) -> Path | None:
-    """Given an .enlp or .enl path, find the PDF directory."""
-    # For .enlp packages, look inside
+    """Given an .enlp or .enl path, find its PDF directory.
+
+    Checks the standard EndNote layout (<lib>.Data/PDF) by direct path before
+    any scan, so we never walk thousands of PDFs just to locate the folder.
+    """
+    # .enlp package: standard layout is <lib>.enlp/<stem>.Data/PDF
     if library_path.suffix == ".enlp":
-        for pdf_dir in library_path.rglob("PDF"):
+        direct = library_path / f"{library_path.stem}.Data" / "PDF"
+        if direct.is_dir():
+            return direct
+        # Fallback: any *.Data/PDF one level inside the package.
+        for data in library_path.glob("*.Data"):
+            pdf_dir = data / "PDF"
             if pdf_dir.is_dir():
                 return pdf_dir
+        return None
 
-    # For .enl files, look for sibling .Data directory
-    data_dir = library_path.with_suffix(".Data")
-    if data_dir.exists():
-        pdf_dir = data_dir / "PDF"
-        if pdf_dir.exists():
+    # .enl file: sibling <stem>.Data/PDF
+    pdf_dir = library_path.with_suffix(".Data") / "PDF"
+    if pdf_dir.is_dir():
+        return pdf_dir
+
+    # Or any *.Data/PDF next to the library file.
+    for d in library_path.parent.glob("*.Data"):
+        pdf_dir = d / "PDF"
+        if pdf_dir.is_dir():
             return pdf_dir
 
-    # Look next to the library file
-    parent = library_path.parent
-    for d in parent.iterdir():
-        if d.is_dir() and d.name.endswith(".Data"):
-            pdf_dir = d / "PDF"
-            if pdf_dir.exists():
-                return pdf_dir
-
     return None
+
+
+def _count_pdfs(pdf_dir: Path, *, cap: int = 2000, time_budget: float = 2.0) -> tuple[int, bool]:
+    """Count PDFs under a directory for the picker label.
+
+    EndNote nests PDFs in per-record subfolders (PDF/<id>/file.pdf), so a
+    non-recursive glob always reports 0. This recurses, but caps both the count
+    and wall-clock time so it never stalls. Returns (count, was_capped).
+    """
+    deadline = time.monotonic() + time_budget
+    n = 0
+    try:
+        for _ in pdf_dir.rglob("*.pdf"):
+            n += 1
+            if n >= cap or time.monotonic() > deadline:
+                return n, True
+    except OSError:
+        pass
+    return n, False
 
 
 def _find_or_ask_xml() -> Path | None:
@@ -440,20 +510,23 @@ def _find_or_ask_xml() -> Path | None:
 
 
 def _find_or_ask_pdf_dir(xml_path: Path) -> Path | None:
-    """Find PDF directory or ask the user."""
-    # Try to find libraries and their PDF dirs
-    libraries = _find_endnote_libraries()
+    """Find the PDF directory or ask the user."""
+    # Seed the search with the folder holding the XML export — the library is
+    # often right next to it. This scan is bounded so it never hangs (issue #4).
+    click.echo("  Scanning for your EndNote library…")
+    libraries = _find_endnote_libraries(extra_dirs=[xml_path.parent])
     pdf_dirs = []
     for lib in libraries:
         pdf_dir = _find_pdf_dir_for_library(lib)
         if pdf_dir:
-            pdf_count = sum(1 for _ in pdf_dir.glob("*.pdf"))
-            pdf_dirs.append((pdf_dir, pdf_count, lib))
+            count, capped = _count_pdfs(pdf_dir)
+            pdf_dirs.append((pdf_dir, count, capped, lib))
 
     if pdf_dirs:
         click.echo("  Found PDF directories:")
-        for i, (path, count, lib) in enumerate(pdf_dirs[:5], 1):
-            click.echo(f"    [{i}] {path} ({count:,} PDFs)")
+        for i, (path, count, capped, lib) in enumerate(pdf_dirs[:5], 1):
+            label = f"{count:,}+" if capped else f"{count:,}"
+            click.echo(f"    [{i}] {path} ({label} PDFs)")
 
         click.echo(f"    [0] Enter a different path")
         choice = click.prompt("  Select", type=int, default=1)
@@ -461,8 +534,9 @@ def _find_or_ask_pdf_dir(xml_path: Path) -> Path | None:
         if 1 <= choice <= len(pdf_dirs):
             return pdf_dirs[choice - 1][0]
 
-    click.echo("  Could not auto-detect PDF directory.")
-    click.echo("  This is usually inside your EndNote library's .Data/PDF folder.")
+    click.echo("  Could not auto-detect your PDF directory.")
+    click.echo("  It's usually inside your library's .Data/PDF folder, e.g.")
+    click.echo("    ~/Documents/My EndNote Library.enlp/My EndNote Library.Data/PDF")
     path_str = click.prompt("  Path to your PDF directory")
     path = Path(path_str).expanduser().resolve()
     if path.exists():
