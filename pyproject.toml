@@ -50,3 +50,19 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 endnote-mcp = "endnote_mcp.cli:main"
+
+# Package only source — without this, hatchling's sdist sweeps in untracked
+# root files (the mcp-publisher binary, the runtime endnote_library.db-wal/shm,
+# registry tokens). The wheel is already src-only; this pins both explicitly.
+[tool.hatch.build.targets.wheel]
+packages = ["src/endnote_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+    "/CITATION.cff",
+    "/pyproject.toml",
+]
