@@ -34,6 +34,7 @@ def _make_ref(rec_number=1, title="Test Title", year="2020"):
         "isbn": "",
         "label": "",
         "notes": "",
+        "research_notes": "",
         "pdf_path": "",
     }
 
@@ -125,3 +126,74 @@ def test_fts_trigger_sync(db_conn):
     ).fetchall()
     assert len(rows) == 1
     assert rows[0][0] == 1
+
+
+# --- schema migration --------------------------------------------------------
+
+
+def test_new_db_is_stamped_with_current_schema_version(db_conn):
+    from endnote_mcp.db import SCHEMA_VERSION, _migrate
+
+    _migrate(db_conn)
+    assert db_conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+
+
+def test_fts_weights_match_fts_columns():
+    # A new index column without a matching BM25 weight would silently break
+    # ranking, so keep the two definitions the same length.
+    from endnote_mcp.db import FTS_COLUMNS, FTS_WEIGHTS
+
+    assert len(FTS_COLUMNS) == len(FTS_WEIGHTS)
+
+
+def test_migration_adds_research_notes_column(legacy_db_path):
+    from endnote_mcp.db import SCHEMA_VERSION, connect
+
+    conn = connect(legacy_db_path)
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(references_)")}
+    assert "research_notes" in columns
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    conn.close()
+
+
+def test_migration_rebuilds_fts_with_new_columns(legacy_db_path):
+    from endnote_mcp.db import FTS_COLUMNS, connect, _fts_columns
+
+    conn = connect(legacy_db_path)
+    assert _fts_columns(conn) == FTS_COLUMNS
+    conn.close()
+
+
+def test_migration_preserves_existing_rows(legacy_db_path):
+    from endnote_mcp.db import connect
+    from endnote_mcp.search import search_references
+
+    conn = connect(legacy_db_path)
+    # The row survives and is still findable through the rebuilt index.
+    assert conn.execute("SELECT COUNT(*) FROM references_").fetchone()[0] == 1
+    assert len(search_references(conn, "legacy abstract")) == 1
+    conn.close()
+
+
+def test_migration_is_idempotent(legacy_db_path):
+    from endnote_mcp.db import connect
+    from endnote_mcp.search import search_references
+
+    connect(legacy_db_path).close()
+    conn = connect(legacy_db_path)  # second open must not re-migrate or lose data
+    assert conn.execute("SELECT COUNT(*) FROM references_").fetchone()[0] == 1
+    assert len(search_references(conn, "legacy abstract")) == 1
+    conn.close()
+
+
+def test_migrated_db_indexes_research_notes(legacy_db_path):
+    from endnote_mcp.db import connect
+    from endnote_mcp.search import search_references
+
+    conn = connect(legacy_db_path)
+    conn.execute(
+        "UPDATE references_ SET research_notes = 'zxqmarker upgraded' WHERE rec_number = 1"
+    )
+    conn.commit()
+    assert len(search_references(conn, "zxqmarker")) == 1
+    conn.close()

@@ -115,6 +115,7 @@ def parse_endnote_xml(xml_path: str | Path) -> Generator[dict, None, None]:
             "isbn": _find_text(record, ".//isbn"),
             "label": _find_text(record, ".//label"),
             "notes": _find_text(record, ".//notes"),
+            "research_notes": _find_text(record, ".//research-notes"),
             "pdf_path": pdf_filename,
         }
 

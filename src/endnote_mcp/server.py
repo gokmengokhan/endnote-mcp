@@ -90,7 +90,10 @@ def search_references(
         limit: Maximum results to return (default 50).
     """
     conn = _get_conn()
-    results = _search_refs(conn, query, year_from=year_from, year_to=year_to, author=author, ref_type=ref_type, limit=limit)
+    results = _search_refs(
+        conn, query, year_from=year_from, year_to=year_to, author=author,
+        ref_type=ref_type, limit=limit, search_notes=_get_config().search_notes,
+    )
     if not results:
         return f"No references found for: {query}"
     lines = [f"Found {len(results)} reference(s):\n"]
@@ -169,7 +172,7 @@ def search_library(
     results = _search_lib(
         conn, query,
         year_from=year_from, year_to=year_to, author=author,
-        ref_type=ref_type, limit=limit,
+        ref_type=ref_type, limit=limit, search_notes=_get_config().search_notes,
     )
     if not results:
         return f"No references found for: {query}"
@@ -238,6 +241,10 @@ def get_reference_details(rec_number: int) -> str:
         lines.append(f"  Keywords: {', '.join(keywords)}")
     if ref.get("abstract"):
         lines.append(f"  Abstract: {ref['abstract']}")
+    if ref.get("research_notes"):
+        lines.append(f"  Research Notes: {ref['research_notes']}")
+    if ref.get("notes"):
+        lines.append(f"  Notes: {ref['notes']}")
     lines.append(f"  Indexed PDF pages: {ref.get('indexed_pdf_pages', 0)}")
     if ref.get("pdf_path"):
         lines.append(f"  PDF: {ref['pdf_path']}")
@@ -341,7 +348,10 @@ def list_references_by_topic(
         limit: Maximum results (default 50).
     """
     conn = _get_conn()
-    results = _list_topic(conn, topic, year_from=year_from, year_to=year_to, ref_type=ref_type, limit=limit)
+    results = _list_topic(
+        conn, topic, year_from=year_from, year_to=year_to, ref_type=ref_type,
+        limit=limit, search_notes=_get_config().search_notes,
+    )
     if not results:
         return f"No references found for topic: {topic}"
     lines = [f"Found {len(results)} reference(s) on '{topic}':\n"]

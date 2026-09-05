@@ -32,6 +32,7 @@ def sample_ref():
         "isbn": "",
         "label": "",
         "notes": "",
+        "research_notes": "",
         "pdf_path": "smith2020.pdf",
     }
 
@@ -59,6 +60,7 @@ def sample_book_ref():
         "isbn": "978-0273725596",
         "label": "",
         "notes": "",
+        "research_notes": "",
         "pdf_path": "",
     }
 
@@ -108,6 +110,7 @@ def populated_db(db_conn):
             "isbn": "",
             "label": "",
             "notes": "",
+            "research_notes": "zxqmarker my own reading of the field argument",
             "pdf_path": "bourdieu2018.pdf",
         },
         {
@@ -130,6 +133,7 @@ def populated_db(db_conn):
             "isbn": "",
             "label": "",
             "notes": "",
+            "research_notes": "",
             "pdf_path": "charmaz2019.pdf",
         },
         {
@@ -152,6 +156,7 @@ def populated_db(db_conn):
             "isbn": "978-0273725596",
             "label": "",
             "notes": "",
+            "research_notes": "",
             "pdf_path": "",
         },
         {
@@ -174,6 +179,7 @@ def populated_db(db_conn):
             "isbn": "",
             "label": "",
             "notes": "",
+            "research_notes": "",
             "pdf_path": "vdh2020.pdf",
         },
         {
@@ -195,7 +201,8 @@ def populated_db(db_conn):
             "edition": "",
             "isbn": "",
             "label": "",
-            "notes": "",
+            "notes": "Email Address: x@example.com; Thesaurus Term: zxqnoise",
+            "research_notes": "",
             "pdf_path": "bvdh2022.pdf",
         },
     ]
@@ -276,6 +283,8 @@ def sample_xml(tmp_path):
       <publisher><style face="normal" font="default" size="100%">Academic Press</style></publisher>
       <pub-location><style face="normal" font="default" size="100%">New York</style></pub-location>
       <isbn><style face="normal" font="default" size="100%">978-1234567890</style></isbn>
+      <notes><style face="normal" font="default" size="100%">Email Address: x@example.com</style></notes>
+      <research-notes><style face="normal" font="default" size="100%">My own take on this book.</style></research-notes>
     </record>
     <record>
       <rec-number>3</rec-number>
@@ -306,3 +315,58 @@ def sample_xml(tmp_path):
     xml_path = tmp_path / "test_library.xml"
     xml_path.write_text(xml_content, encoding="utf-8")
     return xml_path
+
+
+# The schema as shipped up to 1.4.9: no research_notes column, a five-column
+# references_fts, and user_version left at 0.
+_V1_SCHEMA = """
+    CREATE TABLE references_ (
+        rec_number   INTEGER PRIMARY KEY,
+        ref_type     TEXT, title TEXT, authors TEXT, year TEXT, journal TEXT,
+        volume TEXT, issue TEXT, pages TEXT, abstract TEXT, keywords TEXT,
+        doi TEXT, url TEXT, publisher TEXT, place_published TEXT,
+        edition TEXT, isbn TEXT, label TEXT, notes TEXT, pdf_path TEXT
+    );
+    CREATE VIRTUAL TABLE references_fts USING fts5(
+        title, authors, abstract, keywords, journal,
+        content='references_', content_rowid='rec_number',
+        tokenize='porter unicode61'
+    );
+    CREATE TRIGGER references_ai AFTER INSERT ON references_ BEGIN
+        INSERT INTO references_fts(rowid, title, authors, abstract, keywords, journal)
+        VALUES (NEW.rec_number, NEW.title, NEW.authors, NEW.abstract, NEW.keywords, NEW.journal);
+    END;
+    CREATE TABLE pdf_pages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rec_number INTEGER NOT NULL REFERENCES references_(rec_number) ON DELETE CASCADE,
+        page_number INTEGER NOT NULL, text_content TEXT,
+        UNIQUE(rec_number, page_number)
+    );
+    CREATE VIRTUAL TABLE pdf_fts USING fts5(
+        text_content, content='pdf_pages', content_rowid='id',
+        tokenize='porter unicode61'
+    );
+    CREATE TABLE reference_embeddings (
+        rec_number INTEGER PRIMARY KEY REFERENCES references_(rec_number) ON DELETE CASCADE,
+        embedding BLOB NOT NULL, model_name TEXT NOT NULL
+    );
+"""
+
+
+@pytest.fixture
+def legacy_db_path(tmp_path):
+    """An on-disk database using the pre-migration schema, with one row."""
+    import sqlite3 as _sqlite3
+
+    path = tmp_path / "legacy.db"
+    conn = _sqlite3.connect(str(path))
+    conn.executescript(_V1_SCHEMA)
+    conn.execute(
+        "INSERT INTO references_(rec_number, title, authors, abstract, keywords,"
+        " journal, notes) VALUES (1, 'Legacy Title', '[\"Old, Author\"]',"
+        " 'legacy abstract', '[]', 'Legacy Journal', 'Thesaurus Term: zxqnoise')"
+    )
+    conn.execute("INSERT INTO references_fts(references_fts) VALUES('rebuild')")
+    conn.commit()
+    conn.close()
+    return path

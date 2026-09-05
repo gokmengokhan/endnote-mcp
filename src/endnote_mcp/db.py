@@ -6,9 +6,33 @@ import json
 import sqlite3
 from pathlib import Path
 
+# Bumped whenever the on-disk schema changes; see _migrate().
+#   1 - initial schema
+#   2 - research_notes column; research_notes + notes added to references_fts
+SCHEMA_VERSION = 2
+
+# The FTS5 index columns and their BM25 weights, in order. Both the schema and
+# the search queries are generated from these, so a column can never be added
+# in one place and forgotten in another.
+FTS_COLUMNS = (
+    "title",
+    "authors",
+    "abstract",
+    "keywords",
+    "journal",
+    "research_notes",
+    "notes",
+)
+FTS_WEIGHTS = (10.0, 5.0, 3.0, 8.0, 2.0, 6.0, 1.0)
+
+# EndNote's Notes field is where reference managers dump import residue —
+# author affiliations, email addresses, thesaurus terms — so it is indexed but
+# excluded from matching unless the user opts in (config: search_notes).
+NOISY_FTS_COLUMNS = ("notes",)
+
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
-    """Open (or create) the database and ensure the schema exists."""
+    """Open (or create) the database and ensure the schema is up to date."""
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
@@ -16,7 +40,91 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     _create_schema(conn)
+    _migrate(conn)
     return conn
+
+
+def _references_fts_sql() -> str:
+    """Build the references_fts table and its sync triggers from FTS_COLUMNS."""
+    cols = ", ".join(FTS_COLUMNS)
+    new_vals = ", ".join(f"NEW.{c}" for c in FTS_COLUMNS)
+    old_vals = ", ".join(f"OLD.{c}" for c in FTS_COLUMNS)
+    return f"""
+        CREATE VIRTUAL TABLE IF NOT EXISTS references_fts USING fts5(
+            {cols},
+            content='references_',
+            content_rowid='rec_number',
+            tokenize='porter unicode61'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS references_ai AFTER INSERT ON references_
+        BEGIN
+            INSERT INTO references_fts(rowid, {cols})
+            VALUES (NEW.rec_number, {new_vals});
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS references_ad AFTER DELETE ON references_
+        BEGIN
+            INSERT INTO references_fts(references_fts, rowid, {cols})
+            VALUES ('delete', OLD.rec_number, {old_vals});
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS references_au AFTER UPDATE ON references_
+        BEGIN
+            INSERT INTO references_fts(references_fts, rowid, {cols})
+            VALUES ('delete', OLD.rec_number, {old_vals});
+            INSERT INTO references_fts(rowid, {cols})
+            VALUES (NEW.rec_number, {new_vals});
+        END;
+    """
+
+
+def _fts_columns(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """Return the current column names of references_fts, or () if absent."""
+    try:
+        rows = conn.execute("PRAGMA table_info(references_fts)").fetchall()
+    except sqlite3.OperationalError:
+        return ()
+    return tuple(row["name"] for row in rows)
+
+
+def _rebuild_references_fts(conn: sqlite3.Connection) -> None:
+    """Recreate references_fts with the current column set and repopulate it.
+
+    Only the reference metadata index is touched — pdf_fts, which holds the
+    bulk of the data, is left alone, so this stays fast even on large
+    libraries.
+    """
+    conn.executescript("""
+        DROP TRIGGER IF EXISTS references_ai;
+        DROP TRIGGER IF EXISTS references_ad;
+        DROP TRIGGER IF EXISTS references_au;
+        DROP TABLE IF EXISTS references_fts;
+    """)
+    conn.executescript(_references_fts_sql())
+    conn.execute("INSERT INTO references_fts(references_fts) VALUES('rebuild')")
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Bring an existing database up to SCHEMA_VERSION.
+
+    Each step checks the live schema rather than trusting the version stamp,
+    so it is safe to run against a database created before user_version was
+    recorded (every release up to 1.4.9 left it at 0).
+    """
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version >= SCHEMA_VERSION:
+        return
+
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(references_)")}
+    if "research_notes" not in columns:
+        conn.execute("ALTER TABLE references_ ADD COLUMN research_notes TEXT")
+
+    if _fts_columns(conn) != FTS_COLUMNS:
+        _rebuild_references_fts(conn)
+
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    conn.commit()
 
 
 def _create_schema(conn: sqlite3.Connection) -> None:
@@ -41,43 +149,17 @@ def _create_schema(conn: sqlite3.Connection) -> None:
             edition      TEXT,
             isbn         TEXT,
             label        TEXT,
-            notes        TEXT,
+            notes        TEXT,          -- EndNote Notes (often import residue)
+            research_notes TEXT,        -- EndNote Research Notes (user's own)
             pdf_path     TEXT           -- relative to pdf_dir
         );
 
-        -- FTS5 index over reference metadata (weighted BM25)
-        CREATE VIRTUAL TABLE IF NOT EXISTS references_fts USING fts5(
-            title,
-            authors,
-            abstract,
-            keywords,
-            journal,
-            content='references_',
-            content_rowid='rec_number',
-            tokenize='porter unicode61'
-        );
+    """)
 
-        -- Triggers to keep references_fts in sync
-        CREATE TRIGGER IF NOT EXISTS references_ai AFTER INSERT ON references_
-        BEGIN
-            INSERT INTO references_fts(rowid, title, authors, abstract, keywords, journal)
-            VALUES (NEW.rec_number, NEW.title, NEW.authors, NEW.abstract, NEW.keywords, NEW.journal);
-        END;
+    # references_fts and its triggers are generated from FTS_COLUMNS.
+    conn.executescript(_references_fts_sql())
 
-        CREATE TRIGGER IF NOT EXISTS references_ad AFTER DELETE ON references_
-        BEGIN
-            INSERT INTO references_fts(references_fts, rowid, title, authors, abstract, keywords, journal)
-            VALUES ('delete', OLD.rec_number, OLD.title, OLD.authors, OLD.abstract, OLD.keywords, OLD.journal);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS references_au AFTER UPDATE ON references_
-        BEGIN
-            INSERT INTO references_fts(references_fts, rowid, title, authors, abstract, keywords, journal)
-            VALUES ('delete', OLD.rec_number, OLD.title, OLD.authors, OLD.abstract, OLD.keywords, OLD.journal);
-            INSERT INTO references_fts(rowid, title, authors, abstract, keywords, journal)
-            VALUES (NEW.rec_number, NEW.title, NEW.authors, NEW.abstract, NEW.keywords, NEW.journal);
-        END;
-
+    conn.executescript("""
         -- PDF page content
         CREATE TABLE IF NOT EXISTS pdf_pages (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,11 +222,13 @@ def upsert_reference(conn: sqlite3.Connection, ref: dict) -> None:
         INSERT INTO references_(
             rec_number, ref_type, title, authors, year, journal,
             volume, issue, pages, abstract, keywords, doi, url,
-            publisher, place_published, edition, isbn, label, notes, pdf_path
+            publisher, place_published, edition, isbn, label, notes,
+            research_notes, pdf_path
         ) VALUES (
             :rec_number, :ref_type, :title, :authors, :year, :journal,
             :volume, :issue, :pages, :abstract, :keywords, :doi, :url,
-            :publisher, :place_published, :edition, :isbn, :label, :notes, :pdf_path
+            :publisher, :place_published, :edition, :isbn, :label, :notes,
+            :research_notes, :pdf_path
         )
         ON CONFLICT(rec_number) DO UPDATE SET
             ref_type=excluded.ref_type, title=excluded.title,
@@ -156,6 +240,7 @@ def upsert_reference(conn: sqlite3.Connection, ref: dict) -> None:
             publisher=excluded.publisher, place_published=excluded.place_published,
             edition=excluded.edition, isbn=excluded.isbn,
             label=excluded.label, notes=excluded.notes,
+            research_notes=excluded.research_notes,
             pdf_path=excluded.pdf_path
     """, ref)
 

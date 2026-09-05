@@ -154,7 +154,19 @@ endnote_xml: /path/to/your/library.xml
 pdf_dir: /path/to/your/Library.Data/PDF
 db_path: /path/to/library.db    # auto-set by setup
 max_pdf_pages: 30                # max pages per read request
+search_notes: false              # include the EndNote Notes field in searches
 ```
+
+### Notes fields
+
+EndNote's **Research Notes** — where you keep your own summaries and judgments —
+is indexed and searched by default, ranked just below keywords and above the
+abstract.
+
+The plain **Notes** field is indexed but excluded from matching, because
+reference managers use it as a dumping ground on import: author affiliations,
+email addresses, thesaurus terms. Set `search_notes: true` to include it. The
+setting takes effect immediately — no re-index needed.
 
 ## Citation Styles
 

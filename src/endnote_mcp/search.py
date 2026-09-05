@@ -8,6 +8,28 @@ import sqlite3
 from collections import OrderedDict
 from typing import Any
 
+from endnote_mcp.db import FTS_COLUMNS, FTS_WEIGHTS, NOISY_FTS_COLUMNS
+
+# Derived from db.FTS_WEIGHTS so the ranking weights cannot drift out of step
+# with the index columns.
+_BM25_RANK = "bm25(references_fts, " + ", ".join(str(w) for w in FTS_WEIGHTS) + ")"
+
+# The columns searched when the user has not opted into noisy ones.
+_DEFAULT_SCOPE = "{" + " ".join(
+    c for c in FTS_COLUMNS if c not in NOISY_FTS_COLUMNS
+) + "}"
+
+
+def _scope(fts_query: str, *, search_notes: bool) -> str:
+    """Restrict a MATCH expression to the columns worth searching.
+
+    EndNote's Notes field is indexed but excluded by default, so imported
+    affiliations and thesaurus terms do not surface as matches.
+    """
+    if search_notes:
+        return fts_query
+    return f"{_DEFAULT_SCOPE} : ({fts_query})"
+
 
 # Explicit FTS5 boolean operators. FTS5 only recognises them in uppercase, so
 # lowercase "and"/"or"/"not" stay ordinary search words.
@@ -119,17 +141,20 @@ def search_references(
     author: str | None = None,
     ref_type: str | None = None,
     limit: int = 50,
+    search_notes: bool = False,
 ) -> list[dict]:
     """Search reference metadata using FTS5 with BM25 ranking.
 
-    The FTS5 columns are weighted: title (10), authors (5), abstract (3),
-    keywords (8), journal (2).
+    The FTS5 columns are weighted: title (10), keywords (8), research notes
+    (6), authors (5), abstract (3), journal (2), notes (1).  The EndNote Notes
+    field only participates when *search_notes* is true.
     """
     fts_query = build_fts_query(query)
     if not fts_query:
         return []
+    fts_query = _scope(fts_query, search_notes=search_notes)
 
-    sql = """
+    sql = f"""
         SELECT
             r.rec_number,
             r.title,
@@ -139,7 +164,7 @@ def search_references(
             r.ref_type,
             r.doi,
             r.keywords,
-            bm25(references_fts, 10.0, 5.0, 3.0, 8.0, 2.0) AS rank
+            {_BM25_RANK} AS rank
         FROM references_fts
         JOIN references_ r ON r.rec_number = references_fts.rowid
         WHERE references_fts MATCH ?
@@ -261,13 +286,15 @@ def list_by_topic(
     year_to: str | None = None,
     ref_type: str | None = None,
     limit: int = 50,
+    search_notes: bool = False,
 ) -> list[dict]:
     """List references matching a broad topic across keywords, title, abstract."""
     fts_query = build_fts_query(topic)
     if not fts_query:
         return []
+    fts_query = _scope(fts_query, search_notes=search_notes)
 
-    sql = """
+    sql = f"""
         SELECT
             r.rec_number,
             r.title,
@@ -277,7 +304,7 @@ def list_by_topic(
             r.ref_type,
             r.doi,
             r.keywords,
-            bm25(references_fts, 10.0, 5.0, 3.0, 8.0, 2.0) AS rank
+            {_BM25_RANK} AS rank
         FROM references_fts
         JOIN references_ r ON r.rec_number = references_fts.rowid
         WHERE references_fts MATCH ?
@@ -310,6 +337,7 @@ def search_library(
     author: str | None = None,
     ref_type: str | None = None,
     limit: int = 30,
+    search_notes: bool = False,
 ) -> list[dict]:
     """Combined search across metadata, PDF content, and semantic similarity.
 
@@ -319,7 +347,7 @@ def search_library(
     """
     meta_results = search_references(
         conn, query, year_from=year_from, year_to=year_to, author=author,
-        ref_type=ref_type, limit=limit,
+        ref_type=ref_type, limit=limit, search_notes=search_notes,
     )
     ft_results = search_fulltext(conn, query, limit=limit)
 
@@ -506,8 +534,11 @@ def _find_related_fts(
     )
     if not fts_query:
         return []
+    # Always scoped: this is a similarity lookup with no user intent behind it,
+    # so matching against imported note residue would only add noise.
+    fts_query = _scope(fts_query, search_notes=False)
 
-    sql = """
+    sql = f"""
         SELECT
             r.rec_number,
             r.title,
@@ -517,7 +548,7 @@ def _find_related_fts(
             r.ref_type,
             r.doi,
             r.keywords,
-            bm25(references_fts, 10.0, 5.0, 3.0, 8.0, 2.0) AS rank
+            {_BM25_RANK} AS rank
         FROM references_fts
         JOIN references_ r ON r.rec_number = references_fts.rowid
         WHERE references_fts MATCH ?

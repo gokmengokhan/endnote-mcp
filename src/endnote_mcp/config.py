@@ -35,6 +35,9 @@ class Config:
     pdf_dir: Path
     db_path: Path
     max_pdf_pages: int = 30
+    # EndNote's Notes field usually holds import residue rather than the
+    # user's own writing, so it is excluded from searches unless enabled.
+    search_notes: bool = False
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> Config:
@@ -86,4 +89,5 @@ class Config:
             pdf_dir=pdf_dir,
             db_path=db_path,
             max_pdf_pages=int(raw.get("max_pdf_pages", 30)),
+            search_notes=bool(raw.get("search_notes", False)),
         )

@@ -257,3 +257,51 @@ def test_search_fulltext_finds_hyphenated_phrase(populated_db):
     # becomes a phrase and still matches.
     results = search_fulltext(populated_db, "grounded-theory")
     assert len(results) >= 1
+
+
+# --- notes / research notes indexing ----------------------------------------
+
+
+def test_research_notes_are_searchable(populated_db):
+    # Ref 1 carries "zxqmarker" only in research_notes.
+    results = search_references(populated_db, "zxqmarker")
+    assert [r["rec_number"] for r in results] == [1]
+
+
+def test_notes_are_excluded_by_default(populated_db):
+    # Ref 5's "zxqnoise" lives only in the imported notes field.
+    assert search_references(populated_db, "zxqnoise") == []
+
+
+def test_notes_are_searchable_when_enabled(populated_db):
+    results = search_references(populated_db, "zxqnoise", search_notes=True)
+    assert [r["rec_number"] for r in results] == [5]
+
+
+def test_list_by_topic_excludes_notes_by_default(populated_db):
+    assert list_by_topic(populated_db, "zxqnoise") == []
+    assert len(list_by_topic(populated_db, "zxqnoise", search_notes=True)) == 1
+
+
+def test_notes_scope_still_honours_filters(populated_db):
+    # Column scoping wraps the whole expression, so the other filters still work.
+    results = search_references(populated_db, "zxqmarker", year_from="2020")
+    assert results == []
+    results = search_references(populated_db, "zxqmarker", year_from="2015")
+    assert [r["rec_number"] for r in results] == [1]
+
+
+def test_notes_scope_survives_fts_metacharacters(populated_db):
+    # The column filter is applied on top of the sanitised query, so malformed
+    # input must still not reach FTS5 as syntax.
+    for query in ["covid-19", "foo AND", "(nested", "a)) b", "water:governance"]:
+        assert isinstance(search_references(populated_db, query), list), query
+        assert isinstance(
+            search_references(populated_db, query, search_notes=True), list
+        ), query
+
+
+def test_get_reference_details_returns_note_fields(populated_db):
+    ref = get_reference_details(populated_db, 1)
+    assert ref["research_notes"] == "zxqmarker my own reading of the field argument"
+    assert "notes" in ref

@@ -58,3 +58,14 @@ def test_parse_book_fields(sample_xml):
     assert rec["publisher"] == "Academic Press"
     assert rec["place_published"] == "New York"
     assert rec["isbn"] == "978-1234567890"
+
+
+def test_parse_research_notes(sample_xml):
+    refs = {r["rec_number"]: r for r in parse_endnote_xml(sample_xml)}
+    assert refs[2]["research_notes"] == "My own take on this book."
+    assert refs[2]["notes"] == "Email Address: x@example.com"
+
+
+def test_research_notes_absent_is_empty_string(sample_xml):
+    refs = {r["rec_number"]: r for r in parse_endnote_xml(sample_xml)}
+    assert refs[1]["research_notes"] == ""
