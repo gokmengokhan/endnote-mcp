@@ -37,10 +37,37 @@ Your references and PDF text are indexed into a local SQLite database with full-
 
 - **EndNote 20+** (any edition)
 - **Claude Desktop** app
-- **Python 3.10+**
-- **uv** (recommended) or pip
 
-## Quick Start
+The Desktop Extension installer below has no other prerequisites — Claude Desktop manages Python and dependencies. The CLI install path additionally needs Python 3.10+ and uv (or pip).
+
+## Install (Desktop Extension — Recommended)
+
+The fastest install for non-engineers. No Python or terminal required.
+
+1. **Export your library from EndNote.** File → Export → choose **XML** format → save somewhere like Desktop.
+2. **Download** `endnote-mcp.dxt` from the [latest release](https://github.com/gokmengokhan/endnote-mcp/releases).
+3. **Double-click the `.dxt` file** (or in Claude Desktop: Settings → Extensions → Install Extension…).
+4. In the install dialog, point Claude Desktop at:
+   - Your **EndNote XML** file (from step 1)
+   - Your **PDF Attachments Folder** — usually `<library>.Data/PDF/` next to your `.enl` file, or `PDF/` inside an `.enlp` package.
+5. Click Install. Claude Desktop will start indexing your library automatically — metadata is searchable within seconds, PDF text and semantic embeddings finish in the background.
+
+That's it. Try asking Claude *"Search my library for grounded theory"*.
+
+### Building the .dxt yourself
+
+Maintainers (or anyone working from source) can build the extension with:
+
+```bash
+bash scripts/build_dxt.sh
+# → dist/endnote-mcp.dxt
+```
+
+The build is a single cross-platform `.dxt` file (~36 KB). Dependencies resolve at install time via the `uv` runtime bundled with Claude Desktop.
+
+## Install (CLI / from PyPI)
+
+Prefer the terminal? This path gives you the `endnote-mcp` CLI for indexing and embedding.
 
 ### 1. Install
 
@@ -71,8 +98,6 @@ The wizard will:
 ### 4. Restart Claude Desktop
 
 Quit and reopen Claude Desktop. You'll see "EndNote Library" in your MCP connectors.
-
-That's it. Start asking Claude about your references.
 
 ## Semantic Search (Optional)
 

@@ -1,0 +1,98 @@
+{
+  "manifest_version": "0.4",
+  "name": "endnote-mcp",
+  "display_name": "EndNote Library",
+  "version": "1.4.5",
+  "description": "Search, cite, and read PDFs from your EndNote library in Claude.",
+  "long_description": "Connect your EndNote reference library to Claude Desktop. Provides 12 tools for searching references by metadata, full-text search inside PDFs, semantic similarity search, generating citations in multiple styles (APA, Harvard, Vancouver, Chicago, IEEE), exporting BibTeX, and reading PDF pages directly. On first launch, indexes your library automatically — metadata is searchable in seconds; PDF text extraction and semantic embeddings continue in the background.",
+  "author": {
+    "name": "Gokhan Gokmen"
+  },
+  "homepage": "https://github.com/gokmengokhan/endnote-mcp",
+  "documentation": "https://github.com/gokmengokhan/endnote-mcp#readme",
+  "support": "https://github.com/gokmengokhan/endnote-mcp/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gokmengokhan/endnote-mcp"
+  },
+  "license": "AGPL-3.0-or-later",
+  "keywords": [
+    "endnote",
+    "references",
+    "citations",
+    "academic",
+    "research",
+    "literature",
+    "pdf",
+    "bibliography"
+  ],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "env": {
+        "ENDNOTE_XML": "${user_config.endnote_xml}",
+        "ENDNOTE_PDF_DIR": "${user_config.pdf_dir}",
+        "ENDNOTE_MAX_PDF_PAGES": "${user_config.max_pdf_pages}",
+        "ENDNOTE_INDEX_PDFS_ON_FIRST_LAUNCH": "${user_config.extract_pdf_text}",
+        "ENDNOTE_GENERATE_EMBEDDINGS": "${user_config.semantic_search}"
+      }
+    }
+  },
+  "user_config": {
+    "endnote_xml": {
+      "type": "file",
+      "title": "EndNote XML Export",
+      "description": "Your EndNote XML file. Export from EndNote: File → Export → choose XML format.",
+      "required": true
+    },
+    "pdf_dir": {
+      "type": "directory",
+      "title": "PDF Attachments Folder",
+      "description": "The folder containing your PDF attachments — usually inside your library's .Data/PDF directory (or PDF/ inside an .enlp package).",
+      "required": true
+    },
+    "extract_pdf_text": {
+      "type": "boolean",
+      "title": "Enable full-text PDF search",
+      "description": "Extracts text from your PDFs so Claude can find quotes and passages inside papers. Adds about 1 minute per 100 PDFs on first launch (runs in the background — the server is usable immediately).",
+      "default": true
+    },
+    "semantic_search": {
+      "type": "boolean",
+      "title": "Enable semantic search",
+      "description": "Uses AI embeddings so Claude can find papers by meaning, not just keywords. Downloads a ~100 MB model on first use.",
+      "default": true
+    },
+    "max_pdf_pages": {
+      "type": "number",
+      "title": "Maximum pages per PDF read",
+      "description": "How many pages Claude can read from a single PDF in one tool call.",
+      "default": 30,
+      "min": 5,
+      "max": 200
+    }
+  },
+  "tools": [
+    {"name": "search_references", "description": "Search by title, author, keywords, or abstract."},
+    {"name": "search_fulltext", "description": "Search inside the PDF content of your references."},
+    {"name": "search_library", "description": "Combined metadata + PDF + semantic search."},
+    {"name": "search_semantic", "description": "Find papers by meaning using AI embeddings."},
+    {"name": "get_reference_details", "description": "Get full metadata for a reference."},
+    {"name": "get_citation", "description": "Format a single reference as a citation."},
+    {"name": "get_bibliography", "description": "Format multiple references as a bibliography."},
+    {"name": "get_bibtex", "description": "Export references as BibTeX entries."},
+    {"name": "read_pdf_section", "description": "Read pages from a reference's PDF."},
+    {"name": "list_references_by_topic", "description": "List references on a broad topic."},
+    {"name": "find_related", "description": "Find references related to a given reference."},
+    {"name": "rebuild_index", "description": "Re-index after adding new EndNote references."}
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}
