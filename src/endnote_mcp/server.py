@@ -81,6 +81,8 @@ def search_references(
 
     Args:
         query: Search terms (e.g. "social capital Bourdieu", "grounded theory").
+            Terms are matched literally, so punctuation is safe; "quoted
+            phrases" and the uppercase operators AND, OR and NOT are honoured.
         year_from: Optional start year filter (e.g. "2015").
         year_to: Optional end year filter (e.g. "2023").
         author: Optional author name filter (partial match).
@@ -116,6 +118,8 @@ def search_fulltext(query: str, limit: int = 50) -> str:
 
     Args:
         query: Search terms to find inside PDF text.
+            Terms are matched literally, so punctuation is safe; "quoted
+            phrases" and the uppercase operators AND, OR and NOT are honoured.
         limit: Maximum references to return (default 50).
     """
     conn = _get_conn()
@@ -153,6 +157,8 @@ def search_library(
 
     Args:
         query: Search terms (e.g. "grounded theory", "social capital").
+            Terms are matched literally, so punctuation is safe; "quoted
+            phrases" and the uppercase operators AND, OR and NOT are honoured.
         year_from: Optional start year filter (e.g. "2015").
         year_to: Optional end year filter (e.g. "2023").
         author: Optional author name filter (partial match).
@@ -327,6 +333,8 @@ def list_references_by_topic(
 
     Args:
         topic: Broad topic terms (e.g. "inequality", "qualitative methods").
+            Terms are matched literally, so punctuation is safe; "quoted
+            phrases" and the uppercase operators AND, OR and NOT are honoured.
         year_from: Optional start year filter.
         year_to: Optional end year filter.
         ref_type: Optional reference type filter (e.g. "Journal Article", "Book", "Patent").

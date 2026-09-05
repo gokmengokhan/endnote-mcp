@@ -1,6 +1,7 @@
 """Tests for FTS5-backed search engine."""
 
 from endnote_mcp.search import (
+    build_fts_query,
     search_references,
     search_fulltext,
     list_by_topic,
@@ -162,3 +163,97 @@ def test_parse_authors_short_empty():
 
 def test_parse_authors_short_none():
     assert _parse_authors_short("") == "Unknown"
+
+
+# --- FTS5 query sanitisation -------------------------------------------------
+
+
+def test_build_fts_query_quotes_bare_terms():
+    assert build_fts_query("social capital") == '"social" AND "capital"'
+
+
+def test_build_fts_query_hyphenated_term():
+    # Previously crashed with: no such column: Based
+    assert build_fts_query("Assumption-Based Planning") == (
+        '"Assumption-Based" AND "Planning"'
+    )
+
+
+def test_build_fts_query_colon_is_literal():
+    assert build_fts_query("water:governance") == '"water:governance"'
+
+
+def test_build_fts_query_keeps_phrases_and_operators():
+    assert build_fts_query('"exact phrase" OR other') == '"exact phrase" OR "other"'
+
+
+def test_build_fts_query_keeps_prefix_marker():
+    assert build_fts_query("gov*") == '"gov"*'
+
+
+def test_build_fts_query_keeps_balanced_groups():
+    assert build_fts_query("(water OR zzz) AND planning") == (
+        '("water" OR "zzz") AND "planning"'
+    )
+
+
+def test_build_fts_query_closes_open_paren():
+    assert build_fts_query("(nested") == '("nested")'
+
+
+def test_build_fts_query_drops_stray_close_paren():
+    assert build_fts_query("a)) b") == '"a" AND "b"'
+
+
+def test_build_fts_query_drops_empty_group():
+    assert build_fts_query("water ()") == '"water"'
+
+
+def test_build_fts_query_drops_dangling_operator():
+    assert build_fts_query("foo AND") == '"foo"'
+
+
+def test_build_fts_query_drops_leading_operator():
+    assert build_fts_query("NOT covid") == '"covid"'
+
+
+def test_build_fts_query_collapses_operator_run():
+    # The last operator wins, so "AND NOT" still excludes the right operand.
+    assert build_fts_query("a AND NOT b") == '"a" NOT "b"'
+
+
+def test_build_fts_query_returns_empty_for_unsearchable_input():
+    for query in ["", "   ", "---", "*", "()", "AND OR NOT"]:
+        assert build_fts_query(query) == "", query
+
+
+def test_build_fts_query_preserves_non_ascii():
+    assert build_fts_query("Gökmen İstanbul") == '"Gökmen" AND "İstanbul"'
+
+
+def test_search_references_hyphenated_query(populated_db):
+    # Regression: hyphens used to reach FTS5 as syntax and raise OperationalError
+    results = search_references(populated_db, "Assumption-Based Planning")
+    assert isinstance(results, list)
+
+
+def test_search_references_survives_fts_metacharacters(populated_db):
+    for query in ["covid-19", "water:governance", "foo AND", "(nested", "a)) b", "*"]:
+        assert isinstance(search_references(populated_db, query), list), query
+
+
+def test_search_fulltext_survives_fts_metacharacters(populated_db):
+    for query in ["covid-19", "grounded-theory", "habitus:", "AND", "((("]:
+        assert isinstance(search_fulltext(populated_db, query), list), query
+
+
+def test_list_by_topic_survives_fts_metacharacters(populated_db):
+    for query in ["covid-19", "scenario:planning", "OR", ")("]:
+        assert isinstance(list_by_topic(populated_db, query), list), query
+
+
+def test_search_fulltext_finds_hyphenated_phrase(populated_db):
+    # "grounded theory" appears in the indexed PDF text; the hyphenated form
+    # becomes a phrase and still matches.
+    results = search_fulltext(populated_db, "grounded-theory")
+    assert len(results) >= 1

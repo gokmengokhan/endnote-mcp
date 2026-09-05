@@ -3,9 +3,111 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import OrderedDict
 from typing import Any
+
+
+# Explicit FTS5 boolean operators. FTS5 only recognises them in uppercase, so
+# lowercase "and"/"or"/"not" stay ordinary search words.
+_FTS_OPERATORS = frozenset({"AND", "OR", "NOT"})
+
+_FTS_TOKEN_RE = re.compile(
+    r'"(?P<phrase>[^"]*)"?'  # quoted phrase; the closing quote may be missing
+    r'|(?P<paren>[()])'
+    r'|(?P<word>[^\s()"]+)'
+)
+
+
+def build_fts_query(query: str) -> str:
+    """Turn free-text user input into a safe FTS5 MATCH expression.
+
+    Bare terms are wrapped in double quotes so characters FTS5 reads as syntax
+    — hyphens, colons, punctuation — are matched literally rather than raising
+    ``no such column: ...``.  Quoted phrases, the uppercase operators ``AND``,
+    ``OR`` and ``NOT``, parentheses and a trailing ``*`` prefix marker are all
+    preserved; anything that would leave the expression malformed (a dangling
+    operator, an unbalanced or empty parenthesis) is dropped.
+
+    Column filters (``title:foo``) and ``NEAR()`` are not supported — they are
+    matched as literal text.  Returns "" when nothing searchable remains.
+    """
+    # Each stack frame is one parenthesised group of (kind, text) tokens,
+    # where kind is "term" or "op".
+    stack: list[list[tuple[str, str]]] = [[]]
+
+    for match in _FTS_TOKEN_RE.finditer(query):
+        paren = match.group("paren")
+        if paren == "(":
+            stack.append([])
+            continue
+        if paren == ")":
+            if len(stack) > 1:  # a stray ")" is simply dropped
+                _close_group(stack)
+            continue
+
+        phrase = match.group("phrase")
+        if phrase is not None:
+            _add_term(stack[-1], _quote(phrase))
+            continue
+
+        word = match.group("word")
+        if word in _FTS_OPERATORS:
+            _add_operator(stack[-1], word)
+            continue
+
+        is_prefix = word.endswith("*")
+        term = _quote(word.rstrip("*") if is_prefix else word)
+        if term:
+            _add_term(stack[-1], term + "*" if is_prefix else term)
+
+    while len(stack) > 1:  # close whatever the user left open
+        _close_group(stack)
+
+    tokens = stack[0]
+    _drop_trailing_operators(tokens)
+    return " ".join(text for _, text in tokens)
+
+
+def _quote(text: str) -> str:
+    """Quote a term as an FTS5 phrase, or return "" if it holds no tokens."""
+    if not any(ch.isalnum() for ch in text):
+        return ""
+    return '"' + text.replace('"', '""') + '"'
+
+
+def _add_term(tokens: list[tuple[str, str]], text: str) -> None:
+    if not text:
+        return
+    # FTS5 only allows implicit AND between bare phrases, not around a
+    # parenthesised group, so spell every conjunction out.
+    if tokens and tokens[-1][0] == "term":
+        tokens.append(("op", "AND"))
+    tokens.append(("term", text))
+
+
+def _add_operator(tokens: list[tuple[str, str]], op: str) -> None:
+    if not tokens:
+        return  # an operator needs a left operand
+    if tokens[-1][0] == "op":
+        # Keep the last of a run, so the common "a AND NOT b" still excludes b.
+        tokens[-1] = ("op", op)
+    else:
+        tokens.append(("op", op))
+
+
+def _drop_trailing_operators(tokens: list[tuple[str, str]]) -> None:
+    while tokens and tokens[-1][0] == "op":
+        tokens.pop()
+
+
+def _close_group(stack: list[list[tuple[str, str]]]) -> None:
+    """Pop the innermost group and fold it into its parent, unless it is empty."""
+    group = stack.pop()
+    _drop_trailing_operators(group)
+    if group:
+        _add_term(stack[-1], "(" + " ".join(text for _, text in group) + ")")
 
 
 def search_references(
@@ -23,11 +125,9 @@ def search_references(
     The FTS5 columns are weighted: title (10), authors (5), abstract (3),
     keywords (8), journal (2).
     """
-    if not query.strip():
+    fts_query = build_fts_query(query)
+    if not fts_query:
         return []
-
-    # Build the FTS query - escape double quotes in user input
-    fts_query = query.replace('"', '""')
 
     sql = """
         SELECT
@@ -78,10 +178,9 @@ def search_fulltext(
     Returns results grouped by reference. Each result dict contains a
     list of ``snippets`` with (page, snippet) matches.
     """
-    if not query.strip():
+    fts_query = build_fts_query(query)
+    if not fts_query:
         return []
-
-    fts_query = query.replace('"', '""')
 
     # Fetch a generous pool of raw matches, then group by reference
     inner_limit = max(limit * 10, 200)
@@ -164,10 +263,9 @@ def list_by_topic(
     limit: int = 50,
 ) -> list[dict]:
     """List references matching a broad topic across keywords, title, abstract."""
-    if not topic.strip():
+    fts_query = build_fts_query(topic)
+    if not fts_query:
         return []
-
-    fts_query = topic.replace('"', '""')
 
     sql = """
         SELECT
@@ -401,9 +499,10 @@ def _find_related_fts(
     if not terms:
         return []
 
-    # Build an OR query for FTS5
-    fts_query = " OR ".join(
-        f'"{t.replace(chr(34), "")}"' for t in terms if t.strip()
+    # Build an OR query for FTS5; build_fts_query drops any term that would
+    # leave the expression malformed.
+    fts_query = build_fts_query(
+        " OR ".join(f'"{t.replace(chr(34), "")}"' for t in terms if t.strip())
     )
     if not fts_query:
         return []
