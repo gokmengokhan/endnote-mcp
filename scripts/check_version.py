@@ -46,6 +46,15 @@ def _cff_version(text: str) -> str:
     return match.group(1).strip("\"'")
 
 
+def _readme_version(text: str) -> str:
+    # The "Citing This Software" block quotes a version, and it silently went
+    # five releases stale before anyone noticed.
+    match = re.search(r"\(Version (\S+?)\) \[Computer software\]", text)
+    if match is None:
+        sys.exit("README.md citation block has no version")
+    return match.group(1)
+
+
 def versions() -> dict[str, str]:
     server = json.loads((ROOT / "server.json").read_text("utf-8"))
 
@@ -54,6 +63,7 @@ def versions() -> dict[str, str]:
         "server.json (top level)": server["version"],
         "server.json (packages[0])": server["packages"][0]["version"],
         "CITATION.cff": _cff_version((ROOT / "CITATION.cff").read_text("utf-8")),
+        "README.md (citation)": _readme_version((ROOT / "README.md").read_text("utf-8")),
     }
 
 
