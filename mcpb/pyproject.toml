@@ -1,7 +1,7 @@
 [project]
-name = "endnote-mcp-dxt"
-version = "1.4.5"
-description = "Claude Desktop Extension wrapper for endnote-mcp"
+name = "endnote-mcp-mcpb"
+version = "1.4.11"
+description = "MCP bundle wrapper for endnote-mcp"
 requires-python = ">=3.10"
 dependencies = [
     "mcp[cli]>=1.0.0",

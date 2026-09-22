@@ -57,6 +57,7 @@ def _readme_version(text: str) -> str:
 
 def versions() -> dict[str, str]:
     server = json.loads((ROOT / "server.json").read_text("utf-8"))
+    manifest = json.loads((ROOT / "mcpb" / "manifest.json").read_text("utf-8"))
 
     return {
         "pyproject.toml": _pyproject_version((ROOT / "pyproject.toml").read_text("utf-8")),
@@ -64,6 +65,10 @@ def versions() -> dict[str, str]:
         "server.json (packages[0])": server["packages"][0]["version"],
         "CITATION.cff": _cff_version((ROOT / "CITATION.cff").read_text("utf-8")),
         "README.md (citation)": _readme_version((ROOT / "README.md").read_text("utf-8")),
+        "mcpb/manifest.json": manifest["version"],
+        "mcpb/pyproject.toml": _pyproject_version(
+            (ROOT / "mcpb" / "pyproject.toml").read_text("utf-8")
+        ),
     }
 
 

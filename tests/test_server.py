@@ -6,6 +6,8 @@ the failure surfacing as `CONNECTION_CLOSED` in a client.
 """
 
 import importlib
+import json
+from pathlib import Path
 
 import pytest
 
@@ -54,3 +56,18 @@ async def test_all_tools_registered(server):
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def test_bundle_manifest_lists_the_same_tools():
+    """mcpb/manifest.json advertises the tool list; it must not drift from the server."""
+    manifest = json.loads(
+        (Path(__file__).resolve().parents[1] / "mcpb" / "manifest.json").read_text("utf-8")
+    )
+    assert {t["name"] for t in manifest["tools"]} == EXPECTED_TOOLS
+
+
+def test_bundle_entry_point_exists():
+    """A manifest pointing at a missing entry point fails only at install time."""
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads((root / "mcpb" / "manifest.json").read_text("utf-8"))
+    assert (root / "mcpb" / manifest["server"]["entry_point"]).is_file()
