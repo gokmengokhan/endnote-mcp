@@ -1,0 +1,126 @@
+name: Release
+
+# Publishes to PyPI and the MCP Registry when a vX.Y.Z tag is pushed.
+# Both use OIDC, so there is no API token stored in this repo.
+#
+# To cut a release:
+#   1. bump the version in pyproject.toml, server.json (both fields) and CITATION.cff
+#   2. commit, then `git tag v1.4.11 && git push origin main --tags`
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra semantic
+
+      # A version that disagrees with the tag is rejected by the registry only
+      # after PyPI has already been published to, which cannot be undone.
+      - name: Check version matches tag
+        run: uv run python scripts/check_version.py "${{ github.ref_name }}"
+
+      - name: Run tests
+        run: uv run pytest tests/ -v
+
+  build:
+    name: Build distributions
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      # The registry requires this marker in the README that PyPI renders.
+      - name: Check PyPI metadata and mcp-name marker
+        run: |
+          uvx twine check dist/*
+          if ! grep -q "mcp-name: io.github.gokmengokhan/endnote-mcp" README.md; then
+            echo "::error::README.md is missing the mcp-name marker the registry validates against"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/endnote-mcp/
+    permissions:
+      id-token: write  # mints the OIDC token PyPI trades for an upload token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  registry:
+    name: Publish to MCP Registry
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # mcp-publisher exchanges this for a registry token
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # PyPI's JSON API reports a new release within seconds, but the resolver
+      # index lags behind it. The registry validates against the index, so a
+      # publish fired immediately after upload can fail on a package that is
+      # demonstrably there.
+      - name: Wait for PyPI index to serve the new version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for attempt in $(seq 1 30); do
+            if pip download --no-deps --dest /tmp/pypi-probe \
+                 "endnote-mcp==${version}" >/dev/null 2>&1; then
+              echo "endnote-mcp ${version} resolvable after ${attempt} attempt(s)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::endnote-mcp ${version} still not resolvable from PyPI after 5 minutes"
+          exit 1
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz \
+            | tar -xz mcp-publisher
+          chmod +x mcp-publisher
+
+      - name: Publish
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

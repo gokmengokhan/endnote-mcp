@@ -203,11 +203,27 @@ Generates complete entries with proper entry types (`@article`, `@book`, `@inpro
 
 **"Semantic search is not available"** — Run `pip install endnote-mcp[semantic]` then `endnote-mcp embed`
 
+**Client reports the server "failed to connect" / `CONNECTION_CLOSED`** — The client hides the underlying error. Run `echo '' | endnote-mcp serve` to see the real traceback (the JSON decode error it prints afterwards is just the empty input, not a fault).
+
+## Releasing
+
+Publishing runs on a tag push via [`.github/workflows/release.yml`](.github/workflows/release.yml), which uploads to PyPI and the MCP Registry using OIDC — no API tokens are stored in the repository.
+
+The version lives in four places, and the registry rejects a `server.json` that does not exactly match the published PyPI release. Bump all of them, then verify before tagging:
+
+```bash
+# pyproject.toml, server.json (two fields), CITATION.cff
+python scripts/check_version.py v1.4.11
+
+git commit -am "Bump version to 1.4.11"
+git tag v1.4.11 && git push origin main --tags
+```
+
 ## Citing This Software
 
 If you use this tool in your research, please cite it:
 
-> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.5) [Computer software]. https://doi.org/10.5281/zenodo.18617546
+> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.10) [Computer software]. https://doi.org/10.5281/zenodo.18617546
 
 Or use the "Cite this repository" button on GitHub for BibTeX/APA formats.
 
