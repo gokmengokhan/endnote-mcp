@@ -9,7 +9,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+try:  # mcp >= 2.0 renamed FastMCP to MCPServer
+    from mcp.server.mcpserver import MCPServer as _Server
+except ImportError:  # mcp 1.x
+    from mcp.server.fastmcp import FastMCP as _Server
 
 from endnote_mcp.config import Config
 from endnote_mcp.db import connect, get_stats
@@ -38,7 +41,7 @@ def _doi_link(doi: str) -> str:
         return f"  DOI: {doi}"
     return f"  DOI: https://doi.org/{doi}"
 
-mcp = FastMCP(
+mcp = _Server(
     "EndNote Library",
     instructions="Search, cite, and read PDFs from your EndNote reference library.",
 )

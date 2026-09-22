@@ -6,12 +6,12 @@
     "url": "https://github.com/gokmengokhan/endnote-mcp",
     "source": "github"
   },
-  "version": "1.4.9",
+  "version": "1.4.10",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "endnote-mcp",
-      "version": "1.4.9",
+      "version": "1.4.10",
       "transport": {
         "type": "stdio"
       }

@@ -1,6 +1,6 @@
 [project]
 name = "endnote-mcp"
-version = "1.4.9"
+version = "1.4.10"
 description = "Connect your EndNote reference library to Claude AI — search, cite, and read PDFs directly in conversations"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
+    # server.py supports both majors (mcp 2.0 renamed FastMCP -> MCPServer)
     "mcp[cli]>=1.0.0",
     "lxml>=5.0",
     "PyMuPDF>=1.24",
