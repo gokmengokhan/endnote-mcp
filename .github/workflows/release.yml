@@ -63,10 +63,23 @@ jobs:
             exit 1
           fi
 
+      # Built here so the release carries the exact bundle these tests passed on.
+      # Kept out of the `dist` artifact: gh-action-pypi-publish uploads whatever
+      # it finds, and PyPI would reject an .mcpb.
+      - name: Build the desktop bundle
+        run: bash scripts/build_mcpb.sh
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
-          path: dist/
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: dist/*.mcpb
 
   pypi:
     name: Publish to PyPI
@@ -85,6 +98,10 @@ jobs:
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Re-running a tag, or backfilling one for an already-published
+          # version, should be a no-op rather than a hard failure.
+          skip-existing: true
 
   registry:
     name: Publish to MCP Registry
@@ -122,5 +139,42 @@ jobs:
 
       - name: Publish
         run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Re-running a tag should be a no-op, not a duplicate-version failure.
+          if curl -fsSL "https://registry.modelcontextprotocol.io/v0/servers?search=endnote" \
+               | jq -r '.servers[]? | (.version // .server.version)' \
+               | grep -qx "$version"; then
+            echo "$version is already in the registry — nothing to do"
+            exit 0
+          fi
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish
+
+  github-release:
+    name: Create GitHub Release
+    needs: [pypi, registry]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # creates the release and uploads the bundle to it
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle
+          path: bundle/
+
+      # The README points people at the latest release to download the bundle,
+      # so a release without one attached is a broken instruction.
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" bundle/*.mcpb --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" bundle/*.mcpb \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
