@@ -38,15 +38,15 @@ Your references and PDF text are indexed into a local SQLite database with full-
 - **EndNote 20+** (any edition)
 - **Claude Desktop** app
 
-The Desktop Extension installer below has no other prerequisites — Claude Desktop manages Python and dependencies. The CLI install path additionally needs Python 3.10+ and uv (or pip).
+The bundle installer below has no other prerequisites — Claude Desktop manages Python and dependencies. The CLI install path additionally needs Python 3.10+ and uv (or pip).
 
-## Install (Desktop Extension — Recommended)
+## Install (Desktop Bundle — Recommended)
 
 The fastest install for non-engineers. No Python or terminal required.
 
 1. **Export your library from EndNote.** File → Export → choose **XML** format → save somewhere like Desktop.
-2. **Download** `endnote-mcp.dxt` from the [latest release](https://github.com/gokmengokhan/endnote-mcp/releases).
-3. **Double-click the `.dxt` file** (or in Claude Desktop: Settings → Extensions → Install Extension…).
+2. **Download** `endnote-mcp.mcpb` from the [latest release](https://github.com/gokmengokhan/endnote-mcp/releases).
+3. **Double-click the `.mcpb` file** (or in Claude Desktop: Settings → Extensions → Install Extension…).
 4. In the install dialog, point Claude Desktop at:
    - Your **EndNote XML** file (from step 1)
    - Your **PDF Attachments Folder** — usually `<library>.Data/PDF/` next to your `.enl` file, or `PDF/` inside an `.enlp` package.
@@ -54,16 +54,20 @@ The fastest install for non-engineers. No Python or terminal required.
 
 That's it. Try asking Claude *"Search my library for grounded theory"*.
 
-### Building the .dxt yourself
+The bundle keeps its own configuration (`config-mcpb.yaml`), so installing it will not disturb an existing CLI setup. Both default to the same database, so if you already indexed with the CLI the bundle reuses that index rather than building a second copy.
 
-Maintainers (or anyone working from source) can build the extension with:
+### Building the bundle yourself
+
+Maintainers (or anyone working from source) can build it with:
 
 ```bash
-bash scripts/build_dxt.sh
-# → dist/endnote-mcp.dxt
+bash scripts/build_mcpb.sh
+# → dist/endnote-mcp.mcpb
 ```
 
-The build is a single cross-platform `.dxt` file (~36 KB). Dependencies resolve at install time via the `uv` runtime bundled with Claude Desktop.
+The build is a single cross-platform `.mcpb` file (~36 KB). Dependencies resolve at install time via the `uv` runtime bundled with Claude Desktop.
+
+> The format was called DXT and used the `.dxt` extension until it was renamed upstream to MCPB (MCP Bundles). See [modelcontextprotocol/mcpb](https://github.com/modelcontextprotocol/mcpb).
 
 ## Install (CLI / from PyPI)
 
@@ -234,14 +238,15 @@ Generates complete entries with proper entry types (`@article`, `@book`, `@inpro
 
 Publishing runs on a tag push via [`.github/workflows/release.yml`](.github/workflows/release.yml), which uploads to PyPI and the MCP Registry using OIDC — no API tokens are stored in the repository.
 
-The version lives in four places, and the registry rejects a `server.json` that does not exactly match the published PyPI release. Bump all of them, then verify before tagging:
+The version lives in seven places, and the registry rejects a `server.json` that does not exactly match the published PyPI release. Bump all of them, then verify before tagging:
 
 ```bash
-# pyproject.toml, server.json (two fields), CITATION.cff
-python scripts/check_version.py v1.4.11
+# pyproject.toml, server.json (x2), CITATION.cff, the README citation
+# block, mcpb/manifest.json and mcpb/pyproject.toml
+python scripts/check_version.py v1.4.12
 
-git commit -am "Bump version to 1.4.11"
-git tag v1.4.11 && git push origin main --tags
+git commit -am "Bump version to 1.4.12"
+git tag v1.4.12 && git push origin main --tags
 ```
 
 ## Citing This Software

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Claude Desktop Extension entry point for endnote-mcp.
+"""MCP bundle entry point for endnote-mcp.
 
-Translates user_config env vars (set by Claude Desktop) into a config.yaml,
-runs a fast synchronous metadata index so the MCP server is responsive within
+Translates user_config env vars (set by the host app) into a config file, runs
+a fast synchronous metadata index so the MCP server is responsive within
 seconds, then kicks off PDF text extraction and semantic embeddings in a
 background thread before handing off to the MCP server's stdio loop.
+
+The bundle keeps its own config file, separate from the one `endnote-mcp setup`
+writes for the CLI, so installing the bundle cannot clobber an existing CLI
+setup -- see _bootstrap_config().
 """
 
 from __future__ import annotations
@@ -19,7 +23,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import yaml  # noqa: E402
 
-from endnote_mcp.config import Config, get_config_dir, get_default_config_path  # noqa: E402
+from endnote_mcp.config import Config, get_config_dir  # noqa: E402
+
+# Written next to the CLI's config.yaml rather than over it. Lives in the
+# platform config dir, not the bundle directory, so it survives updates.
+BUNDLE_CONFIG_NAME = "config-mcpb.yaml"
 
 
 def _log(msg: str) -> None:
@@ -56,7 +64,7 @@ def _bootstrap_config() -> Path:
 
     config_dir = get_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = get_default_config_path()
+    config_path = config_dir / BUNDLE_CONFIG_NAME
 
     try:
         max_pages = int(os.environ.get("ENDNOTE_MAX_PDF_PAGES") or 30)
@@ -71,6 +79,13 @@ def _bootstrap_config() -> Path:
     }
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    # endnote_mcp.server._get_config() calls Config.load() with no argument and
+    # re-discovers the config on its own, so passing config_path around is not
+    # enough. Config.load() checks ENDNOTE_MCP_CONFIG ahead of the platform
+    # config dir, so setting it here covers every later lookup in this process.
+    # It must be set before `from endnote_mcp.server import mcp` in main().
+    os.environ["ENDNOTE_MCP_CONFIG"] = str(config_path)
 
     _log(f"Config:  {config_path}")
     _log(f"  XML:     {xml_path}")
