@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "endnote-mcp",
   "display_name": "EndNote Library",
-  "version": "1.4.11",
+  "version": "1.4.12",
   "description": "Search, cite, and read PDFs from your EndNote library in Claude.",
   "long_description": "Connect your EndNote reference library to Claude Desktop. Provides 12 tools for searching references by metadata, full-text search inside PDFs, semantic similarity search, generating citations in multiple styles (APA, Harvard, Vancouver, Chicago, IEEE), exporting BibTeX, and reading PDF pages directly. On first launch, indexes your library automatically — metadata is searchable in seconds; PDF text extraction and semantic embeddings continue in the background.",
   "author": {
