@@ -4,7 +4,7 @@
   "display_name": "EndNote Library",
   "version": "1.4.13",
   "description": "Search, cite, and read PDFs from your EndNote library in Claude.",
-  "long_description": "Connect your EndNote reference library to Claude Desktop. Provides 12 tools for searching references by metadata, full-text search inside PDFs, semantic similarity search, generating citations in multiple styles (APA, Harvard, Vancouver, Chicago, IEEE), exporting BibTeX, and reading PDF pages directly. On first launch, indexes your library automatically — metadata is searchable in seconds; PDF text extraction and semantic embeddings continue in the background.",
+  "long_description": "Connect your EndNote reference library to Claude Desktop. Provides 12 library tools and three portable Word capability/audit/preparation tools for searching references by metadata, full-text search inside PDFs, semantic similarity search, generating citations in multiple styles (APA, Harvard, Vancouver, Chicago, IEEE), exporting BibTeX, and reading PDF pages directly. On first launch, indexes your library automatically \u2014 metadata is searchable in seconds; PDF text extraction and semantic embeddings continue in the background.",
   "author": {
     "name": "Gokhan Gokmen"
   },
@@ -42,7 +42,8 @@
         "ENDNOTE_PDF_DIR": "${user_config.pdf_dir}",
         "ENDNOTE_MAX_PDF_PAGES": "${user_config.max_pdf_pages}",
         "ENDNOTE_INDEX_PDFS_ON_FIRST_LAUNCH": "${user_config.extract_pdf_text}",
-        "ENDNOTE_GENERATE_EMBEDDINGS": "${user_config.semantic_search}"
+        "ENDNOTE_GENERATE_EMBEDDINGS": "${user_config.semantic_search}",
+        "ENDNOTE_DOCX_WORKING_ROOT": "${user_config.docx_working_root}"
       }
     }
   },
@@ -50,19 +51,19 @@
     "endnote_xml": {
       "type": "file",
       "title": "EndNote XML Export",
-      "description": "Your EndNote XML file. Export from EndNote: File → Export → choose XML format.",
+      "description": "Your EndNote XML file. Export from EndNote: File \u2192 Export \u2192 choose XML format.",
       "required": true
     },
     "pdf_dir": {
       "type": "directory",
       "title": "PDF Attachments Folder",
-      "description": "The folder containing your PDF attachments — usually inside your library's .Data/PDF directory (or PDF/ inside an .enlp package).",
+      "description": "The folder containing your PDF attachments \u2014 usually inside your library's .Data/PDF directory (or PDF/ inside an .enlp package).",
       "required": true
     },
     "extract_pdf_text": {
       "type": "boolean",
       "title": "Enable full-text PDF search",
-      "description": "Extracts text from your PDFs so Claude can find quotes and passages inside papers. Adds about 1 minute per 100 PDFs on first launch (runs in the background — the server is usable immediately).",
+      "description": "Extracts text from your PDFs so Claude can find quotes and passages inside papers. Adds about 1 minute per 100 PDFs on first launch (runs in the background \u2014 the server is usable immediately).",
       "default": true
     },
     "semantic_search": {
@@ -78,6 +79,12 @@
       "default": 30,
       "min": 5,
       "max": 200
+    },
+    "docx_working_root": {
+      "type": "directory",
+      "title": "DOCX working folder (optional)",
+      "description": "Absolute dedicated folder for new temporary-citation copies. Does not enable native automation.",
+      "required": false
     }
   },
   "tools": [
@@ -128,6 +135,18 @@
     {
       "name": "rebuild_index",
       "description": "Re-index after adding new EndNote references."
+    },
+    {
+      "name": "get_word_endnote_status",
+      "description": "Report unqualified native capability without app calls."
+    },
+    {
+      "name": "audit_word_endnote_document",
+      "description": "Audit saved DOCX fields."
+    },
+    {
+      "name": "prepare_word_endnote_conversion",
+      "description": "Prepare a new temporary-citation copy in an explicitly configured folder."
     }
   ],
   "compatibility": {

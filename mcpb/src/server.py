@@ -82,6 +82,13 @@ def _bootstrap_config() -> Path:
         "db_path": str(config_dir / "library.db"),
         "max_pdf_pages": max_pages,
     }
+    root_env = os.environ.get("ENDNOTE_DOCX_WORKING_ROOT", "").strip()
+    if root_env:
+        if not Path(root_env).is_absolute():
+            _log("ERROR: DOCX working folder must be absolute.")
+            sys.exit(1)
+        config["native_working_root"] = root_env
+    config["native_word_enabled"] = False
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 

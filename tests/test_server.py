@@ -21,6 +21,9 @@ from endnote_mcp.config import Config
 from endnote_mcp.db import connect, upsert_reference
 
 EXPECTED_TOOLS = {
+    "get_word_endnote_status",
+    "audit_word_endnote_document",
+    "prepare_word_endnote_conversion",
     "search_references",
     "search_fulltext",
     "search_library",
@@ -167,3 +170,85 @@ def test_rebuild_index_reports_a_failed_indexer(server, library, monkeypatch):
     out = server.rebuild_index()
     assert out.startswith("Re-indexing failed (exit code 1).")
     assert "No module named 'endnote_mcp'" in out
+
+
+@pytest.mark.anyio
+async def test_word_tool_schemas(server):
+    tools = {t.name:(getattr(t,"inputSchema",None) or t.input_schema) for t in await server.mcp.list_tools()}
+    assert 'update_word_endnote_document' not in tools
+    assert tools['get_word_endnote_status'].get('properties',{}) == {}
+    audit = tools['audit_word_endnote_document']
+    assert set(audit['properties']) == {'docx_path','expected_groups','record_map_path','numbering_mode'}
+    assert audit['required'] == ['docx_path']
+    prepare = tools['prepare_word_endnote_conversion']
+    assert set(prepare['properties']) == set(prepare['required']) == {
+        'source_path','destination_path','citation_plan_path','expected_source_sha256'}
+
+
+@pytest.mark.parametrize('explicit_root', [False, True])
+def test_bundle_optional_working_root(tmp_path, monkeypatch, explicit_root):
+    import yaml
+    entry = Path(__file__).resolve().parents[1]/'mcpb'/'src'/'server.py'
+    spec = importlib.util.spec_from_file_location('_bundle_root_test', entry)
+    bundle = importlib.util.module_from_spec(spec); spec.loader.exec_module(bundle)
+    xml = tmp_path/'library.xml'; xml.write_text('<xml/>')
+    monkeypatch.setenv('ENDNOTE_XML',str(xml))
+    monkeypatch.setenv('ENDNOTE_PDF_DIR',str(tmp_path))
+    monkeypatch.delenv('ENDNOTE_DOCX_WORKING_ROOT',raising=False)
+    monkeypatch.setenv('ENDNOTE_MCP_CONFIG',str(tmp_path/'cli.yaml'))
+    cli = tmp_path/'cli.yaml'; cli.write_text('preserve CLI config')
+    monkeypatch.setattr(bundle,'get_config_dir',lambda:tmp_path)
+    if explicit_root: monkeypatch.setenv('ENDNOTE_DOCX_WORKING_ROOT',str(tmp_path/'work'))
+    for _ in range(2):
+        result = yaml.safe_load(bundle._bootstrap_config().read_text())
+        assert result.get('native_working_root') == (str(tmp_path/'work') if explicit_root else None)
+        assert result['native_word_enabled'] is False
+        assert cli.read_text() == 'preserve CLI config'
+
+
+def test_real_stdio_initialize_list_and_portable_calls(tmp_path):
+    """Exercise actual JSON-RPC framing with whichever supported SDK is installed."""
+    import queue
+    env = os.environ.copy()
+    env['ENDNOTE_MCP_CONFIG'] = str(tmp_path/'absent-config.yaml')
+    process = subprocess.Popen([sys.executable,'-m','endnote_mcp.server'],
+        stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=env)
+    errors = []
+    threading.Thread(target=lambda:errors.extend(process.stderr),daemon=True).start()
+    output = queue.Queue()
+    threading.Thread(target=lambda:[output.put(line) for line in process.stdout],daemon=True).start()
+    def request(identifier, method, params):
+        process.stdin.write(json.dumps({'jsonrpc':'2.0','id':identifier,
+            'method':method,'params':params})+'\n')
+        process.stdin.flush()
+        while True:
+            try:
+                reply = json.loads(output.get(timeout=60))
+            except queue.Empty:
+                pytest.fail(f'Stdio timeout calling {method}; stderr: {errors!r}')
+            if reply.get('id') == identifier:
+                assert 'error' not in reply, reply
+                return reply['result']
+    try:
+        request(1,'initialize',{'protocolVersion':'2024-11-05','capabilities':{},
+            'clientInfo':{'name':'portable-test','version':'1'}})
+        process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
+        process.stdin.flush()
+        tools = request(2,'tools/list',{})
+        assert {t['name'] for t in tools['tools']} == EXPECTED_TOOLS
+        for identifier,name,args,status in [
+            (3,'get_word_endnote_status',{},'unqualified'),
+            (4,'audit_word_endnote_document',{'docx_path':str(tmp_path/'missing.docx')},'error'),
+            (5,'prepare_word_endnote_conversion',{'source_path':str(tmp_path/'a.docx'),
+                'destination_path':str(tmp_path/'b.docx'),'citation_plan_path':str(tmp_path/'plan.json'),
+                'expected_source_sha256':'0'*64},None)]:
+            result = request(identifier,'tools/call',{'name':name,'arguments':args})
+            assert not result.get('isError'), result
+            payload = json.loads(result['content'][0]['text'])
+            if status:
+                assert payload['status'] == status
+            else:
+                assert payload['status'] in ('blocked','error')
+    finally:
+        process.terminate()
+        process.communicate(timeout=10)

@@ -1,4 +1,4 @@
-"""MCP server exposing 12 tools for Claude to interact with an EndNote library."""
+"""MCP server exposing library and portable Word tools for Claude to interact with an EndNote library."""
 
 from __future__ import annotations
 
@@ -618,6 +618,11 @@ def rebuild_index() -> str:
 # ====================================================================
 # Entry point
 # ====================================================================
+from endnote_mcp.word.tools import register_tools
+
+register_tools(mcp, _get_config)
+
+
 def main():
     mcp.run()
 

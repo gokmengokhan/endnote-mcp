@@ -260,3 +260,49 @@ Or use the "Cite this repository" button on GitHub for BibTeX/APA formats.
 ## License
 
 AGPL-3.0 — free to use, modify, and distribute. See [LICENSE](LICENSE) for details.
+
+### Portable Word/EndNote document tools
+
+Three additional tools work without Word, EndNote, macOS automation permissions,
+or a live library connection:
+
+- `get_word_endnote_status()` reports the shipped native backend as **unqualified**;
+  it does not inspect application availability, versions or style support.
+- `audit_word_endnote_document(docx_path, expected_groups=None,
+  record_map_path=None, numbering_mode="numeric-first-citation")` audits a saved
+  DOCX. Use `author-date` to avoid numeric first-citation assumptions. Paths must
+  be absolute. Optional record maps use `{"database_id":"…","records":[{
+  "native_record_id":7,"manuscript_reference":1,"doi":"…"}]}`.
+- `prepare_word_endnote_conversion(source_path, destination_path,
+  citation_plan_path, expected_source_sha256)` creates a new temporary-citation
+  copy. It does **not** create native fields or run native conversion.
+
+Preparation is disabled by default. In the CLI YAML configuration explicitly set
+`native_working_root` to an absolute, dedicated existing folder. In the Desktop
+bundle, set the optional **DOCX working folder** extension setting (passed as
+`ENDNOTE_DOCX_WORKING_ROOT`); it persists through the extension settings on each
+launch. The bundle writes its separate bundle configuration and preserves CLI
+configuration. No permission, licence or security setting is changed.
+`native_word_enabled` defaults to false. A supplied true is recorded only as a
+request: status reports effective native capability as false, because no native
+update backend or update tool is shipped or qualified.
+
+All preparation paths must be absolute. Destinations must be new files inside
+that root; symlink components, existing outputs and input/output aliases are
+rejected. The core checks the source SHA-256, exact anchors, field/revision
+protection and explicit bibliography removals before exclusive output creation.
+The citation-plan JSON schema is documented in `endnote_mcp.word.prepare`.
+Preparation supports one native record per temporary token, including repeated
+single-record tokens at distinct anchors. Grouped temporary-token preparation is
+unsupported until explicit group bindings exist; native field auditing still
+supports citation groups.
+Keep originals and inspect the resulting copy. On preflight failure correct the
+request and choose a new output; never assume conversion ran. Hashes and explicit
+stage/status/limitations distinguish preparation from audit. Generic errors omit
+file text. Saved-package audits do not prove scientific correctness, native
+Compare parity, journal compliance, application execution or submission readiness.
+
+Portable tools support Python 3.10–3.13 and MCP SDK 1.x/2.x through the existing
+compatibility shim. The test suite uses fictional packages and no native apps.
+Native qualification is blocked; skipped/unavailable native execution is not a
+passing native test. No native permissions are required for these three tools.
