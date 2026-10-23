@@ -314,15 +314,17 @@ def _chicago(*, authors, title, year, journal, volume, issue, pages, doi, publis
 
 
 def _chicago_authors(authors: list[str]) -> str:
-    first = _full_name(authors[0], inverted=True)
-    if len(authors) == 1:
-        return first
-    if len(authors) == 2:
-        return f"{first} and {_direct_order(authors[1])}"
-    if len(authors) <= 3:
-        middle = ", ".join(_direct_order(a) for a in authors[1:-1])
-        return f"{first}, {middle}, and {_direct_order(authors[-1])}"
-    return f"{first} et al."
+    names = [_full_name(authors[0], inverted=True)] + [_direct_order(a) for a in authors[1:]]
+    if len(names) == 1:
+        return names[0]
+    # The reference list names up to ten authors; beyond ten, the first seven
+    if len(names) > 10:
+        return ", ".join(names[:7]) + ", et al."
+    # A comma closes the inverted first name ("Ward, Geoffrey C., and Ken
+    # Burns"); a group author has no given name to close
+    if len(names) == 2 and not _split_name(authors[0])[1]:
+        return f"{names[0]} and {names[1]}"
+    return ", ".join(names[:-1]) + ", and " + names[-1]
 
 
 # ---------- IEEE ----------
@@ -381,6 +383,9 @@ def _ieee(*, authors, title, year, journal, volume, issue, pages, doi, publisher
 
 def _ieee_authors(authors: list[str]) -> str:
     formatted = [_direct_order_initials(a) for a in authors]
+    # IEEE names up to six authors; beyond six, the first and "et al."
+    if len(formatted) > 6:
+        return f"{formatted[0]} et al."
     if len(formatted) == 1:
         return formatted[0]
     if len(formatted) == 2:

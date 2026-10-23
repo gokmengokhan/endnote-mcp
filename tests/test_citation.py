@@ -159,9 +159,48 @@ def test_chicago_group_author(sample_ref):
     assert format_citation(sample_ref, "chicago").startswith("World Health Organization. 2020.")
 
 
-def test_chicago_et_al_takes_one_full_stop(sample_ref):
-    sample_ref["authors"] = ["Smith, John A.", "Jones, Mary B.", "Brown, Ann", "Green, Tom"]
-    assert format_citation(sample_ref, "chicago").startswith("Smith, John A. et al. 2020.")
+def test_chicago_two_authors_take_a_comma(sample_ref):
+    assert format_citation(sample_ref, "chicago").startswith("Smith, John A., and Mary B. Jones. 2020.")
+
+
+def test_chicago_two_group_authors_take_no_comma(sample_ref):
+    sample_ref["authors"] = ["World Health Organization,", "UNICEF,"]
+    assert format_citation(sample_ref, "chicago").startswith("World Health Organization and UNICEF. 2020.")
+
+
+ELEVEN_AUTHORS = [
+    "Adams, Ann", "Baker, Ben", "Clark, Cara", "Davis, Dan", "Evans, Eve", "Fox, Finn",
+    "Gray, Gus", "Hill, Hal", "Irwin, Ida", "James, Jo", "King, Kim",
+]
+
+
+def test_chicago_lists_up_to_ten_authors(sample_ref):
+    sample_ref["authors"] = ELEVEN_AUTHORS[:10]
+    assert format_citation(sample_ref, "chicago").startswith(
+        "Adams, Ann, Ben Baker, Cara Clark, Dan Davis, Eve Evans, Finn Fox, "
+        "Gus Gray, Hal Hill, Ida Irwin, and Jo James. 2020."
+    )
+
+
+def test_chicago_more_than_ten_authors_list_seven_and_et_al(sample_ref):
+    sample_ref["authors"] = ELEVEN_AUTHORS
+    # "et al." takes one full stop, not two
+    assert format_citation(sample_ref, "chicago").startswith(
+        "Adams, Ann, Ben Baker, Cara Clark, Dan Davis, Eve Evans, Finn Fox, "
+        "Gus Gray, et al. 2020."
+    )
+
+
+def test_ieee_lists_up_to_six_authors(sample_ref):
+    sample_ref["authors"] = ELEVEN_AUTHORS[:6]
+    assert format_citation(sample_ref, "ieee").startswith(
+        "A. Adams, B. Baker, C. Clark, D. Davis, E. Evans, and F. Fox, "
+    )
+
+
+def test_ieee_more_than_six_authors_take_the_first_and_et_al(sample_ref):
+    sample_ref["authors"] = ELEVEN_AUTHORS[:7]
+    assert format_citation(sample_ref, "ieee").startswith('A. Adams et al., "Schedule')
 
 
 def test_title_question_mark_takes_no_full_stop(sample_ref, sample_book_ref):
