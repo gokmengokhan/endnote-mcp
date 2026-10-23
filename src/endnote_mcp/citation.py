@@ -30,7 +30,7 @@ def format_citation(ref: dict, style: str = "apa7") -> str:
             authors = [authors] if authors else []
 
     title = ref.get("title", "")
-    year = ref.get("year", "n.d.")
+    year = ref.get("year") or "n.d."
     journal = ref.get("journal", "")
     volume = ref.get("volume", "")
     issue = ref.get("issue", "")
@@ -48,7 +48,7 @@ def format_citation(ref: dict, style: str = "apa7") -> str:
         "ieee": _ieee,
     }[style]
 
-    return formatter(
+    citation = formatter(
         authors=authors,
         title=title,
         year=year,
@@ -61,16 +61,22 @@ def format_citation(ref: dict, style: str = "apa7") -> str:
         place=place,
         ref_type=ref_type,
     )
+    # A field that already ends in a full stop, question mark or exclamation
+    # mark ("J. A.", "et al.", "n.d.", "Inc.", a title that asks a question)
+    # takes no second full stop, even across closing italics; ellipses stay
+    return re.sub(r"(?<!\.)([.?!])(\*?)\.(?!\.)", r"\1\2", citation)
 
 
 # ---------- APA 7th Edition ----------
 
 def _apa7(*, authors, title, year, journal, volume, issue, pages, doi, publisher, place, ref_type):
     parts = []
+    kind = _source_kind(ref_type, journal)
 
     # Authors
     if authors:
-        parts.append(_apa_authors(authors))
+        # A group author needs this full stop; format_citation drops a doubled one
+        parts.append(_apa_authors(authors) + ".")
     else:
         parts.append(title + ".")
         title = ""
@@ -80,27 +86,36 @@ def _apa7(*, authors, title, year, journal, volume, issue, pages, doi, publisher
 
     # Title
     if title:
-        if _is_article(ref_type):
+        if kind in ("article", "chapter", "proceedings"):
             parts.append(f"{title}.")
+        elif kind == "presentation":
+            parts.append(f"*{title}* [Paper presentation].")
         else:
             parts.append(f"*{title}*.")
 
     # Source
-    if _is_article(ref_type) and journal:
+    if kind == "article" and journal:
         source = f"*{journal}*"
         if volume:
             source += f", *{volume}*"
         if issue:
             source += f"({issue})"
         if pages:
-            source += f", {pages}"
+            source += f", {_page_range(pages)}"
         source += "."
         parts.append(source)
-    elif publisher:
-        if place:
-            parts.append(f"{place}: {publisher}.")
-        else:
+    elif kind in ("chapter", "proceedings"):
+        source = f"In *{journal}*"
+        if pages:
+            source += f" (pp. {_page_range(pages)})"
+        parts.append(source + ".")
+        if publisher:
             parts.append(f"{publisher}.")
+    elif kind == "presentation":
+        parts.append(f"{journal}, {place}." if place else f"{journal}.")
+    elif publisher:
+        # APA 7 leaves out the publisher's location
+        parts.append(f"{publisher}.")
 
     # DOI
     if doi:
@@ -112,13 +127,17 @@ def _apa7(*, authors, title, year, journal, volume, issue, pages, doi, publisher
     return " ".join(parts)
 
 
+def _page_range(pages: str) -> str:
+    """Join a page range with an en dash, as APA requires: '244-253' → '244–253'."""
+    return re.sub(r"\s*-+\s*", "–", pages.strip())
+
+
 def _apa_authors(authors: list[str]) -> str:
     """Format author list for APA 7th."""
     formatted = [_invert_author(a) for a in authors]
     if len(formatted) == 1:
         return formatted[0]
-    if len(formatted) == 2:
-        return f"{formatted[0]} & {formatted[1]}"
+    # APA puts a comma before the ampersand even with two authors
     if len(formatted) <= 20:
         return ", ".join(formatted[:-1]) + ", & " + formatted[-1]
     # 20+ authors: first 19, ..., last
@@ -129,12 +148,13 @@ def _apa_authors(authors: list[str]) -> str:
 
 def _harvard(*, authors, title, year, journal, volume, issue, pages, doi, publisher, place, ref_type):
     parts = []
+    kind = _source_kind(ref_type, journal)
 
     if authors:
         parts.append(_harvard_authors(authors))
     parts.append(f"({year})")
 
-    if _is_article(ref_type):
+    if kind == "article":
         parts.append(f"'{title}',")
         if journal:
             source = f"*{journal}*"
@@ -146,6 +166,17 @@ def _harvard(*, authors, title, year, journal, volume, issue, pages, doi, publis
                 source += f", pp. {pages}"
             source += "."
             parts.append(source)
+    elif kind in ("chapter", "proceedings", "presentation"):
+        parts.append(f"'{title}',")
+        # A chapter is "in" its book; a conference paper names the conference
+        source = f"in *{journal}*" if kind == "chapter" else f"*{journal}*"
+        if publisher:
+            source += f". {place}: {publisher}" if place else f". {publisher}"
+        elif place:
+            source += f". {place}"
+        if pages:
+            source += f", pp. {pages}"
+        parts.append(source + ".")
     else:
         parts.append(f"*{title}*.")
         if publisher:
@@ -176,13 +207,14 @@ def _harvard_authors(authors: list[str]) -> str:
 
 def _vancouver(*, authors, title, year, journal, volume, issue, pages, doi, publisher, place, ref_type):
     parts = []
+    kind = _source_kind(ref_type, journal)
 
     if authors:
         parts.append(_vancouver_authors(authors) + ".")
 
     parts.append(f"{title}.")
 
-    if _is_article(ref_type) and journal:
+    if kind == "article" and journal:
         source = f"{journal}. {year}"
         if volume:
             source += f";{volume}"
@@ -192,11 +224,24 @@ def _vancouver(*, authors, title, year, journal, volume, issue, pages, doi, publ
             source += f":{pages}"
         source += "."
         parts.append(source)
+    elif kind in ("chapter", "proceedings"):
+        if publisher:
+            pub = f"{place}: {publisher}" if place else publisher
+            source = f"In: {journal}. {pub}; {year}."
+        else:
+            source = f"In: {journal}; {year}."
+        if pages:
+            source += f" p. {pages}."
+        parts.append(source)
+    elif kind == "presentation":
+        parts.append(f"Paper presented at: {journal}; {year}" + (f"; {place}." if place else "."))
     else:
         if place and publisher:
             parts.append(f"{place}: {publisher}; {year}.")
         elif publisher:
             parts.append(f"{publisher}; {year}.")
+        else:
+            parts.append(f"{year}.")
 
     return " ".join(parts)
 
@@ -210,26 +255,24 @@ def _vancouver_authors(authors: list[str]) -> str:
 
 def _vancouver_author_name(name: str) -> str:
     """Convert 'Smith, John A.' → 'Smith JA'."""
-    parts = name.split(",", 1)
-    if len(parts) == 1:
-        return name.strip()
-    surname = parts[0].strip()
-    given = parts[1].strip()
-    initials = "".join(w[0].upper() for w in given.split() if w)
-    return f"{surname} {initials}"
+    surname, given, suffix = _split_name(name)
+    initials = "".join(ch for ch in _initials(given) if ch.isalpha())
+    vancouver = f"{surname} {initials}" if initials else surname
+    return f"{vancouver} {suffix.rstrip('.')}" if suffix else vancouver
 
 
 # ---------- Chicago (Author-Date, 17th ed.) ----------
 
 def _chicago(*, authors, title, year, journal, volume, issue, pages, doi, publisher, place, ref_type):
     parts = []
+    kind = _source_kind(ref_type, journal)
 
     if authors:
         parts.append(_chicago_authors(authors) + ".")
 
     parts.append(f"{year}.")
 
-    if _is_article(ref_type):
+    if kind == "article":
         parts.append(f'"{title}."')
         if journal:
             source = f"*{journal}*"
@@ -238,9 +281,22 @@ def _chicago(*, authors, title, year, journal, volume, issue, pages, doi, publis
             if issue:
                 source += f", no. {issue}"
             if pages:
-                source += f": {pages}"
+                source += f": {_page_range(pages)}"
             source += "."
             parts.append(source)
+    elif kind in ("chapter", "proceedings"):
+        parts.append(f'"{title}."')
+        source = f"In *{journal}*"
+        if pages:
+            source += f", {_page_range(pages)}"
+        parts.append(source + ".")
+        if place and publisher:
+            parts.append(f"{place}: {publisher}.")
+        elif publisher:
+            parts.append(f"{publisher}.")
+    elif kind == "presentation":
+        parts.append(f'"{title}."')
+        parts.append(f"Paper presented at {journal}, {place}." if place else f"Paper presented at {journal}.")
     else:
         parts.append(f"*{title}*.")
         if place and publisher:
@@ -258,39 +314,61 @@ def _chicago(*, authors, title, year, journal, volume, issue, pages, doi, publis
 
 
 def _chicago_authors(authors: list[str]) -> str:
+    first = _full_name(authors[0], inverted=True)
     if len(authors) == 1:
-        return authors[0]
+        return first
     if len(authors) == 2:
-        return f"{authors[0]} and {_direct_order(authors[1])}"
+        return f"{first} and {_direct_order(authors[1])}"
     if len(authors) <= 3:
         middle = ", ".join(_direct_order(a) for a in authors[1:-1])
-        return f"{authors[0]}, {middle}, and {_direct_order(authors[-1])}"
-    return f"{authors[0]} et al."
+        return f"{first}, {middle}, and {_direct_order(authors[-1])}"
+    return f"{first} et al."
 
 
 # ---------- IEEE ----------
 
 def _ieee(*, authors, title, year, journal, volume, issue, pages, doi, publisher, place, ref_type):
     parts = []
+    kind = _source_kind(ref_type, journal)
 
     if authors:
         parts.append(_ieee_authors(authors) + ",")
 
     parts.append(f'"{title},"')
 
-    if _is_article(ref_type) and journal:
+    if kind == "article" and journal:
         source = f"*{journal}*"
         if volume:
             source += f", vol. {volume}"
         if issue:
             source += f", no. {issue}"
         if pages:
-            source += f", pp. {pages}"
+            source += f", pp. {_page_range(pages)}"
         source += f", {year}."
         parts.append(source)
+    elif kind == "chapter":
+        source = f"in *{journal}*."
+        if publisher:
+            source += f" {place}: {publisher}," if place else f" {publisher},"
+        source += f" {year}"
+        if pages:
+            source += f", pp. {_page_range(pages)}"
+        parts.append(source + ".")
+    elif kind == "proceedings":
+        source = f"in *{journal}*"
+        if place:
+            source += f", {place}"
+        source += f", {year}"
+        if pages:
+            source += f", pp. {_page_range(pages)}"
+        parts.append(source + ".")
+    elif kind == "presentation":
+        parts.append(f"presented at {journal}, {place}, {year}." if place else f"presented at {journal}, {year}.")
     else:
         if publisher:
             parts.append(f"{place}: {publisher}, {year}." if place else f"{publisher}, {year}.")
+        else:
+            parts.append(f"{year}.")
 
     if doi:
         doi_clean = doi.strip()
@@ -312,43 +390,113 @@ def _ieee_authors(authors: list[str]) -> str:
 
 def _direct_order_initials(name: str) -> str:
     """Convert 'Smith, John A.' → 'J. A. Smith'."""
-    parts = name.split(",", 1)
-    if len(parts) == 1:
-        return name.strip()
-    surname = parts[0].strip()
-    given = parts[1].strip()
-    initials = " ".join(f"{w[0]}." for w in given.split() if w)
-    return f"{initials} {surname}"
+    surname, given, suffix = _split_name(name)
+    initials = _initials(given)
+    direct = f"{initials} {surname}" if initials else surname
+    return f"{direct}, {suffix}" if suffix else direct
 
 
 # ---------- Helpers ----------
 
+# Suffixes EndNote keeps after the given names ("Smith, John, Jr.")
+_NAME_SUFFIX = re.compile(r"^(Jr|Sr|II|III|IV)\.?$", re.IGNORECASE)
+
+
+def _split_name(name: str) -> tuple[str, str, str]:
+    """Split an author into (surname, given names, suffix), reading it as EndNote does.
+
+    EndNote exports people as "Surname, Given names" and corporate authors
+    with a trailing comma ("World Health Organization,"), writing a comma
+    inside a corporate name as ",,". A name without a comma is a person in
+    direct order ("John A. Smith"). A corporate author, or several people
+    typed into one field, comes back whole as the surname.
+    """
+    name = name.strip()
+    if ",," in name:
+        return name.replace(",,", ",").rstrip(", "), "", ""
+    if "," not in name:
+        words = name.split()
+        if len(words) < 2:
+            return name, "", ""
+        return words[-1], " ".join(words[:-1]), ""
+    surname, *rest = (p.strip() for p in name.split(","))
+    rest = [p for p in rest if p]
+    if len(rest) > 2:  # several people in one field; leave it as entered
+        return name.rstrip(", "), "", ""
+    suffix = rest.pop() if len(rest) == 2 and _NAME_SUFFIX.match(rest[1]) else ""
+    return surname, " ".join(rest), suffix
+
+
 def _invert_author(name: str) -> str:
-    """Ensure author name is in 'Surname, Initials.' format for APA/Harvard."""
-    # If already inverted (contains comma), return as-is
-    if "," in name:
-        return name.strip()
-    # Try to invert "John A. Smith" → "Smith, J. A."
-    parts = name.strip().split()
-    if len(parts) < 2:
-        return name.strip()
-    surname = parts[-1]
-    initials = " ".join(f"{p[0]}." for p in parts[:-1])
-    return f"{surname}, {initials}"
+    """Format an author as 'Surname, I. I.' for APA/Harvard."""
+    surname, given, suffix = _split_name(name)
+    initials = _initials(given)
+    inverted = f"{surname}, {initials}" if initials else surname
+    return f"{inverted}, {suffix}" if suffix else inverted
+
+
+def _initials(given: str) -> str:
+    """Reduce given names to initials: 'Paul J.H.' → 'P. J. H.', 'Jean-Paul' → 'J.-P.'."""
+    words = given.split()
+    # Lowercase words are particles ("van") or debris from imported records
+    # ("author", e-mail fragments); skip them unless that leaves nothing.
+    words = [w for w in words if not w[0].islower()] or words
+    initials = []
+    for word in words:
+        hyphenated = []
+        for part in word.split("-"):
+            letters = []
+            for piece in filter(None, part.split(".")):
+                if piece.isupper() and piece.isalpha() and len(piece) <= 3:
+                    letters.extend(piece)  # "JA" is two initials, not a name
+                else:
+                    first = next((ch for ch in piece if ch.isalpha()), "")
+                    if first:
+                        letters.append(first.upper())
+            if letters:
+                hyphenated.append(" ".join(f"{ch}." for ch in letters))
+        if hyphenated:
+            initials.append("-".join(hyphenated))
+    return " ".join(initials)
+
+
+def _full_name(name: str, *, inverted: bool) -> str:
+    """Spell out a name as 'Smith, John A.' (inverted) or 'John A. Smith'."""
+    surname, given, suffix = _split_name(name)
+    if not given:
+        return surname
+    full = f"{surname}, {given}" if inverted else f"{given} {surname}"
+    return f"{full}, {suffix}" if suffix else full
 
 
 def _direct_order(name: str) -> str:
     """Convert 'Smith, John' → 'John Smith'."""
-    parts = name.split(",", 1)
-    if len(parts) == 1:
-        return name.strip()
-    return f"{parts[1].strip()} {parts[0].strip()}"
+    return _full_name(name, inverted=False)
 
 
 def _is_article(ref_type: str) -> bool:
     """Check if the reference type is a journal/periodical article."""
     rt = ref_type.lower()
     return any(kw in rt for kw in ("journal", "article", "magazine", "periodical"))
+
+
+def _source_kind(ref_type: str, container: str) -> str:
+    """Say where a reference appeared: article, chapter, proceedings, presentation or book.
+
+    EndNote keeps a journal's name, the book a section appears in and the
+    conference a paper was given at in the same field, which the parser
+    calls `journal`; without it a chapter or paper is cited like a book.
+    """
+    if _is_article(ref_type):
+        return "article"
+    rt = ref_type.lower()
+    if container and "conference paper" in rt:
+        return "presentation"
+    if container and "conference" in rt:
+        return "proceedings"
+    if container and "section" in rt:
+        return "chapter"
+    return "book"
 
 
 # ---------- BibTeX ----------

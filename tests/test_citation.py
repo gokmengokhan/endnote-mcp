@@ -9,6 +9,7 @@ from endnote_mcp.citation import (
     format_bibtex,
     _invert_author,
     _direct_order,
+    _direct_order_initials,
     _is_article,
     _vancouver_author_name,
     _apa_authors,
@@ -21,10 +22,8 @@ from endnote_mcp.citation import (
 
 def test_apa7_journal_article(sample_ref):
     cite = format_citation(sample_ref, "apa7")
-    # Already-inverted names (with comma) are preserved as-is
-    assert "Smith, John A." in cite
-    assert "Jones, Mary B." in cite
-    assert "(2020)" in cite
+    # EndNote's "Surname, Given names" are reduced to initials
+    assert cite.startswith("Smith, J. A., & Jones, M. B. (2020).")
     assert "Schedule Unreliability" in cite
     assert "*Maritime Economics & Logistics*" in cite
     assert "https://doi.org/10.1234/example.doi" in cite
@@ -32,8 +31,7 @@ def test_apa7_journal_article(sample_ref):
 
 def test_apa7_book(sample_book_ref):
     cite = format_citation(sample_book_ref, "apa7")
-    assert "Stacey, Ralph D." in cite
-    assert "(2011)" in cite
+    assert cite.startswith("Stacey, R. D. (2011).")
     assert "*Strategic Management" in cite
     assert "Financial Times Prentice Hall" in cite
 
@@ -46,12 +44,21 @@ def test_apa7_no_authors(sample_ref):
     assert "(2020)" in cite
 
 
+def test_apa7_group_author(sample_ref):
+    sample_ref["authors"] = ["World Health Organization,"]
+    cite = format_citation(sample_ref, "apa7")
+    assert cite.startswith("World Health Organization. (2020).")
+
+
+def test_apa7_page_range_en_dash(sample_ref):
+    assert "123–145" in format_citation(sample_ref, "apa7")
+
+
 # ---- format_citation: Harvard ----
 
 def test_harvard_journal(sample_ref):
     cite = format_citation(sample_ref, "harvard")
-    assert "Smith, John A." in cite
-    assert "(2020)" in cite
+    assert cite.startswith("Smith, J. A. and Jones, M. B. (2020)")
     assert "'" in cite  # single quotes around title
     assert "vol. 15" in cite
     assert "no. 3" in cite
@@ -88,6 +95,91 @@ def test_ieee_journal(sample_ref):
     assert "doi: 10.1234/example.doi" in cite
 
 
+# ---- format_citation: chapters and conference papers ----
+
+@pytest.fixture
+def chapter_ref(sample_ref):
+    """A book section: EndNote stores the book's title where a journal's would go."""
+    return {
+        **sample_ref, "ref_type": "Book Section", "journal": "Handbook of Forecasting",
+        "volume": "", "issue": "", "pages": "303-362", "doi": "",
+        "publisher": "Springer", "place_published": "Boston",
+    }
+
+
+@pytest.fixture
+def presentation_ref(sample_ref):
+    """A paper given at a conference and not published in proceedings."""
+    return {
+        **sample_ref, "ref_type": "Conference Paper", "journal": "EURAM 2021",
+        "volume": "", "issue": "", "pages": "", "doi": "",
+        "publisher": "", "place_published": "Online",
+    }
+
+
+@pytest.mark.parametrize("style, expected", [
+    ("apa7", "Shipping. In *Handbook of Forecasting* (pp. 303–362). Springer."),
+    ("harvard", "'Schedule Unreliability in Liner Shipping', in *Handbook of Forecasting*. Boston: Springer, pp. 303-362."),
+    ("vancouver", "Shipping. In: Handbook of Forecasting. Boston: Springer; 2020. p. 303-362."),
+    ("chicago", '"Schedule Unreliability in Liner Shipping." In *Handbook of Forecasting*, 303–362. Boston: Springer.'),
+    ("ieee", '"Schedule Unreliability in Liner Shipping," in *Handbook of Forecasting*. Boston: Springer, 2020, pp. 303–362.'),
+])
+def test_book_section_names_its_book(chapter_ref, style, expected):
+    assert expected in format_citation(chapter_ref, style)
+
+
+@pytest.mark.parametrize("style, expected", [
+    ("apa7", "In *Proceedings of the Forecasting Summit* (pp. 303–362). Springer."),
+    ("ieee", "in *Proceedings of the Forecasting Summit*, Boston, 2020, pp. 303–362."),
+])
+def test_proceedings_paper_names_its_proceedings(chapter_ref, style, expected):
+    ref = {**chapter_ref, "ref_type": "Conference Proceedings", "journal": "Proceedings of the Forecasting Summit"}
+    assert expected in format_citation(ref, style)
+
+
+@pytest.mark.parametrize("style, expected", [
+    ("apa7", "*Schedule Unreliability in Liner Shipping* [Paper presentation]. EURAM 2021, Online."),
+    ("harvard", "'Schedule Unreliability in Liner Shipping', *EURAM 2021*. Online."),
+    ("vancouver", "Shipping. Paper presented at: EURAM 2021; 2020; Online."),
+    ("chicago", "Shipping.\" Paper presented at EURAM 2021, Online."),
+    ("ieee", "Shipping,\" presented at EURAM 2021, Online, 2020."),
+])
+def test_conference_paper_names_its_conference(presentation_ref, style, expected):
+    assert expected in format_citation(presentation_ref, style)
+
+
+def test_year_kept_without_publisher(sample_book_ref):
+    sample_book_ref["publisher"] = ""
+    assert format_citation(sample_book_ref, "vancouver").endswith("Dynamics. 2011.")
+    assert format_citation(sample_book_ref, "ieee").endswith('Dynamics," 2011.')
+
+
+def test_chicago_group_author(sample_ref):
+    sample_ref["authors"] = ["World Health Organization,"]
+    assert format_citation(sample_ref, "chicago").startswith("World Health Organization. 2020.")
+
+
+def test_chicago_et_al_takes_one_full_stop(sample_ref):
+    sample_ref["authors"] = ["Smith, John A.", "Jones, Mary B.", "Brown, Ann", "Green, Tom"]
+    assert format_citation(sample_ref, "chicago").startswith("Smith, John A. et al. 2020.")
+
+
+def test_title_question_mark_takes_no_full_stop(sample_ref, sample_book_ref):
+    sample_ref["title"] = "Is Liner Shipping Reliable?"
+    assert "Reliable? *Maritime" in format_citation(sample_ref, "apa7")
+    assert 'Reliable?" *Maritime' in format_citation(sample_ref, "chicago")
+    sample_book_ref["title"] = "Strategy as Practice?"
+    assert "*Strategy as Practice?* Financial" in format_citation(sample_book_ref, "apa7")
+
+
+def test_missing_year_is_nd(sample_ref):
+    sample_ref["year"] = ""
+    assert "(n.d.)." in format_citation(sample_ref, "apa7")
+    for style in ("vancouver", "chicago", "ieee"):
+        cite = format_citation(sample_ref, style)
+        assert "n.d." in cite and "n.d.." not in cite
+
+
 # ---- format_citation: Edge cases ----
 
 def test_unknown_style_raises(sample_ref):
@@ -98,7 +190,7 @@ def test_unknown_style_raises(sample_ref):
 def test_authors_as_json_string(sample_ref):
     sample_ref["authors"] = json.dumps(["Smith, John A.", "Jones, Mary B."])
     cite = format_citation(sample_ref, "apa7")
-    assert "Smith, John A." in cite
+    assert "Smith, J. A." in cite
 
 
 def test_doi_already_url(sample_ref):
@@ -202,6 +294,42 @@ def test_invert_author_already_inverted():
     assert _invert_author("Smith, J. A.") == "Smith, J. A."
 
 
+def test_invert_author_full_given_names():
+    # EndNote exports "Surname, Given names"; APA and Harvard want initials
+    assert _invert_author("Meissner, Philip") == "Meissner, P."
+    assert _invert_author("Schoemaker, Paul J. H.") == "Schoemaker, P. J. H."
+
+
+def test_invert_author_initials_without_spaces():
+    assert _invert_author("Smith, J.A.") == "Smith, J. A."
+    assert _invert_author("Turpin, SM") == "Turpin, S. M."
+
+
+def test_invert_author_hyphenated_given_name():
+    assert _invert_author("Rodrigue, Jean-Paul") == "Rodrigue, J.-P."
+
+
+def test_invert_author_suffix():
+    assert _invert_author("Ketchen, David J., Jr.") == "Ketchen, D. J., Jr."
+
+
+def test_invert_author_corporate():
+    # EndNote marks a corporate author with a trailing comma and writes a
+    # comma inside its name as ",,"
+    assert _invert_author("World Health Organization,") == "World Health Organization"
+    assert _invert_author("Becton,, Dickinson and Company") == "Becton, Dickinson and Company"
+
+
+def test_invert_author_skips_import_debris():
+    assert _invert_author("Robbins, Stephen P. author") == "Robbins, S. P."
+
+
+def test_invert_author_several_people_left_as_entered():
+    assert _invert_author("Chermack, T. J., Glick, M., Cumming, J. M.,") == (
+        "Chermack, T. J., Glick, M., Cumming, J. M."
+    )
+
+
 def test_direct_order():
     assert _direct_order("Smith, John") == "John Smith"
 
@@ -228,6 +356,20 @@ def test_vancouver_author_name_no_comma():
     assert _vancouver_author_name("Smith") == "Smith"
 
 
+def test_vancouver_author_name_initials_and_corporate():
+    assert _vancouver_author_name("Smith, J.A.") == "Smith JA"
+    assert _vancouver_author_name("Turpin, SM") == "Turpin SM"
+    assert _vancouver_author_name("Rodrigue, Jean-Paul") == "Rodrigue JP"
+    assert _vancouver_author_name("World Health Organization,") == "World Health Organization"
+
+
+def test_direct_order_initials():
+    assert _direct_order_initials("Smith, J.A.") == "J. A. Smith"
+    assert _direct_order_initials("Rodrigue, Jean-Paul") == "J.-P. Rodrigue"
+    assert _direct_order_initials("Ketchen, David J., Jr.") == "D. J. Ketchen, Jr."
+    assert _direct_order_initials("World Health Organization,") == "World Health Organization"
+
+
 def test_apa_authors_single():
     result = _apa_authors(["Smith, J."])
     assert result == "Smith, J."
@@ -235,7 +377,7 @@ def test_apa_authors_single():
 
 def test_apa_authors_two():
     result = _apa_authors(["Smith, J.", "Jones, M."])
-    assert result == "Smith, J. & Jones, M."
+    assert result == "Smith, J., & Jones, M."
 
 
 def test_apa_authors_three():
