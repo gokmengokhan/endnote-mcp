@@ -269,7 +269,7 @@ git tag v1.4.12 && git push origin main --tags
 
 If you use this tool in your research, please cite it:
 
-> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.14) [Computer software]. https://doi.org/10.5281/zenodo.18617546
+> Gokmen, G. (2026). *EndNote MCP: Connecting EndNote Reference Libraries to Claude AI* (Version 1.4.15) [Computer software]. https://doi.org/10.5281/zenodo.18617546
 
 Or use the "Cite this repository" button on GitHub for BibTeX/APA formats.
 

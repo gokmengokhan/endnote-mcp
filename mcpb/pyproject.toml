@@ -1,6 +1,6 @@
 [project]
 name = "endnote-mcp-mcpb"
-version = "1.4.14"
+version = "1.4.15"
 description = "MCP bundle wrapper for endnote-mcp"
 requires-python = ">=3.10"
 dependencies = [
