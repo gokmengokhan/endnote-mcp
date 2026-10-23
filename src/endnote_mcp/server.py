@@ -44,7 +44,14 @@ def _doi_link(doi: str) -> str:
 
 mcp = _Server(
     "EndNote Library",
-    instructions="Search, cite, and read PDFs from your EndNote reference library.",
+    instructions=(
+        "Search, cite, and read PDFs from the user's EndNote reference library. "
+        "Each record has a number, shown as [n]; the other tools take it. "
+        "Cite only records these tools return, formatted with get_citation or "
+        "get_bibliography, never from memory. Quote only text read with "
+        "search_fulltext or read_pdf_section. Page numbers in results count PDF "
+        "pages from 1; for a citation, read the page and use the number printed on it."
+    ),
 )
 
 # --- Lazy globals (initialized on first tool call) ---
@@ -577,7 +584,7 @@ def rebuild_index() -> str:
     """Re-index your EndNote library after adding new references.
 
     Run this after you've exported a new XML file from EndNote.
-    This will re-parse the XML and re-extract all PDFs.
+    This re-parses the XML and extracts text from new PDFs only.
     """
     try:
         # Force UTF-8 in subprocess stdio so non-ASCII output doesn't crash

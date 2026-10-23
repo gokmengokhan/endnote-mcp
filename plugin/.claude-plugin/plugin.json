@@ -1,0 +1,18 @@
+{
+  "name": "endnote",
+  "description": "Search, cite and quote from your EndNote library: the endnote-mcp server plus a skill for finding sources, formatting citations, checking quotations and verifying a draft's references.",
+  "author": {
+    "name": "Gokhan Gokmen",
+    "url": "https://github.com/gokmengokhan"
+  },
+  "homepage": "https://github.com/gokmengokhan/endnote-mcp",
+  "repository": "https://github.com/gokmengokhan/endnote-mcp",
+  "license": "AGPL-3.0-or-later",
+  "keywords": ["endnote", "citations", "references", "bibliography", "pdf", "research"],
+  "mcpServers": {
+    "endnote": {
+      "command": "endnote-mcp",
+      "args": ["serve"]
+    }
+  }
+}

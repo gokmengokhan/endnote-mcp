@@ -1,0 +1,15 @@
+{
+  "name": "endnote-mcp",
+  "description": "Claude Code plugin for endnote-mcp, which connects AI agents to your EndNote reference library.",
+  "owner": {
+    "name": "Gokhan Gokmen",
+    "url": "https://github.com/gokmengokhan"
+  },
+  "plugins": [
+    {
+      "name": "endnote",
+      "source": "./plugin",
+      "description": "The endnote-mcp server plus a skill for citing and quoting from your EndNote library."
+    }
+  ]
+}

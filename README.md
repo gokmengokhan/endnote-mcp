@@ -103,6 +103,22 @@ The wizard will:
 
 Quit and reopen Claude Desktop. You'll see "EndNote Library" in your MCP connectors.
 
+## Claude Code Plugin and Agent Skill
+
+The repo includes a skill, [`endnote-library`](plugin/skills/endnote-library/SKILL.md), that teaches an agent how to work with your library: cite only records the tools return, take page numbers from the printed page rather than the PDF position, check quotations word for word, and verify a draft's references one by one.
+
+**Claude Code.** Install the CLI and index your library first (steps 1–3 above), then run:
+
+```
+/plugin install endnote --marketplace gokmengokhan/endnote-mcp
+```
+
+On Claude Code before 2.1.275, run `/plugin marketplace add gokmengokhan/endnote-mcp`, then `/plugin install endnote@endnote-mcp`. The plugin adds the skill and starts the server with `endnote-mcp serve`, so that command must be on your PATH. If you already added the server with `claude mcp add` and the same command, Claude Code connects it only once; if yours uses another command or path, remove it with `claude mcp remove endnote` to avoid duplicate tools.
+
+**Claude Desktop.** Zip the `plugin/skills/endnote-library/` folder and upload it under Customize > Skills.
+
+**Other agents.** Agents that read Agent Skills (`SKILL.md` folders) can use the same skill: copy `plugin/skills/endnote-library/` into the agent's skills directory.
+
 ## Semantic Search (Optional)
 
 Enable meaning-based search that finds references even when they use different terminology than your query. For example, searching *"how companies prepare for uncertain futures"* finds papers on scenario planning and strategic foresight.
