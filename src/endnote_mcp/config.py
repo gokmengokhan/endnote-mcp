@@ -39,6 +39,9 @@ class Config:
     # user's own writing, so it is excluded from searches unless enabled.
     search_notes: bool = False
 
+    native_word_enabled: bool = False
+    native_working_root: Path | None = None
+
     @classmethod
     def load(cls, path: str | Path | None = None) -> Config:
         """Load configuration from a YAML file.
@@ -84,10 +87,17 @@ class Config:
         else:
             db_path = get_config_dir() / "library.db"
 
+        root_raw = raw.get("native_working_root")
+        root = Path(root_raw) if root_raw else None
+        if root is not None and not root.is_absolute():
+            raise ValueError("native_working_root must be absolute")
+
         return cls(
             endnote_xml=endnote_xml,
             pdf_dir=pdf_dir,
             db_path=db_path,
             max_pdf_pages=int(raw.get("max_pdf_pages", 30)),
             search_notes=bool(raw.get("search_notes", False)),
+            native_word_enabled=raw.get("native_word_enabled") is True,  # Request only, never effective capability.
+            native_working_root=root,
         )
