@@ -225,6 +225,8 @@ Five built-in styles:
 
 Use `get_bibliography` to format multiple references at once, sorted by author or year.
 
+Reports, government documents and web pages are cited as online sources: with their URL (or DOI) and, where the style asks for it, the access date from EndNote.
+
 ## BibTeX Export
 
 Export references as BibTeX entries for use in LaTeX:

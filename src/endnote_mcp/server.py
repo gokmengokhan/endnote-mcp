@@ -252,6 +252,8 @@ def get_reference_details(rec_number: int) -> str:
         lines.append(f"  DOI: {ref['doi']}")
     if ref.get("url"):
         lines.append(f"  URL: {ref['url']}")
+    if ref.get("access_date"):
+        lines.append(f"  Access Date: {ref['access_date']}")
     if ref.get("publisher"):
         lines.append(f"  Publisher: {ref['publisher']}")
     if ref.get("isbn"):

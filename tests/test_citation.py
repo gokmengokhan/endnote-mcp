@@ -151,7 +151,8 @@ def test_conference_paper_names_its_conference(presentation_ref, style, expected
 def test_year_kept_without_publisher(sample_book_ref):
     sample_book_ref["publisher"] = ""
     assert format_citation(sample_book_ref, "vancouver").endswith("Dynamics. 2011.")
-    assert format_citation(sample_book_ref, "ieee").endswith('Dynamics," 2011.')
+    # IEEE italicises a book's title
+    assert format_citation(sample_book_ref, "ieee").endswith("Dynamics*. 2011.")
 
 
 def test_chicago_group_author(sample_ref):
@@ -214,9 +215,11 @@ def test_title_question_mark_takes_no_full_stop(sample_ref, sample_book_ref):
 def test_missing_year_is_nd(sample_ref):
     sample_ref["year"] = ""
     assert "(n.d.)." in format_citation(sample_ref, "apa7")
-    for style in ("vancouver", "chicago", "ieee"):
+    for style in ("chicago", "ieee"):
         cite = format_citation(sample_ref, style)
         assert "n.d." in cite and "n.d.." not in cite
+    # Citing Medicine writes a missing date as [date unknown]
+    assert "Logistics. [date unknown];15(3):123-145." in format_citation(sample_ref, "vancouver")
 
 
 # ---- format_citation: Edge cases ----
@@ -430,3 +433,172 @@ def test_apa_authors_21():
     assert "..." in result
     assert "Author0, X." in result
     assert "Author20, X." in result
+
+
+# ---- Reports and web pages: cited as online sources ----
+
+import datetime as _date_mod
+
+from endnote_mcp.citation import _bibtex_author, _is_author, _parse_date
+
+
+@pytest.fixture
+def report_ref():
+    return {
+        "rec_number": 12, "ref_type": "Report", "title": "Delivering Scotland's Blue Economy approach",
+        "authors": ["Scottish Government,"], "year": "2022", "journal": "", "volume": "", "issue": "",
+        "pages": "", "doi": "", "publisher": "Scottish Government", "place_published": "",
+        "url": "https://www.gov.scot/publications/x/", "access_date": "11 November 2026",
+    }
+
+
+@pytest.fixture
+def web_ref():
+    return {
+        "rec_number": 50, "ref_type": "Web Page", "title": "Port statistics", "authors": [], "year": "",
+        "journal": "", "volume": "", "issue": "", "pages": "", "doi": "",
+        "publisher": "Department for Transport", "place_published": "",
+        "url": "https://www.gov.uk/port", "access_date": "29.03.2016",
+    }
+
+
+@pytest.mark.parametrize("style, expected", [
+    ("apa7", "Scottish Government. (2022). *Delivering Scotland's Blue Economy approach*. "
+             "https://www.gov.scot/publications/x/"),
+    ("harvard", "Scottish Government (2022) *Delivering Scotland's Blue Economy approach*. Scottish Government. "
+                "Available at: https://www.gov.scot/publications/x/ (Accessed: 11 November 2026)."),
+    ("vancouver", "Scottish Government. Delivering Scotland's Blue Economy approach [Internet]. Scottish Government; "
+                  "2022 [cited 2026 Nov 11]. Available from: https://www.gov.scot/publications/x/"),
+    ("chicago", "Scottish Government. 2022. *Delivering Scotland's Blue Economy approach*. Scottish Government. "
+                "https://www.gov.scot/publications/x/."),
+    ("ieee", 'Scottish Government, "Delivering Scotland\'s Blue Economy approach," Scottish Government, 2022. '
+             "Accessed: Nov. 11, 2026. [Online]. Available: https://www.gov.scot/publications/x/"),
+])
+def test_online_report(report_ref, style, expected):
+    assert format_citation(report_ref, style) == expected
+
+
+def test_apa_keeps_a_publisher_that_is_not_the_author(report_ref):
+    report_ref["publisher"] = "Marine Directorate"
+    assert "approach*. Marine Directorate. https://" in format_citation(report_ref, "apa7")
+
+
+def test_a_doi_takes_the_urls_place(report_ref):
+    report_ref["doi"] = "10.1000/xyz"
+    for style in ("apa7", "harvard", "vancouver", "chicago", "ieee"):
+        cite = format_citation(report_ref, style)
+        assert "gov.scot" not in cite and "10.1000/xyz" in cite
+
+
+def test_report_without_url_is_cited_like_print(report_ref):
+    report_ref["url"] = ""
+    assert format_citation(report_ref, "harvard").endswith("approach*. Scottish Government.")
+    assert "[Internet]" not in format_citation(report_ref, "vancouver")
+
+
+@pytest.mark.parametrize("style, expected", [
+    ("apa7", "*Port statistics*. (n.d.). Department for Transport. "
+             "Retrieved March 29, 2016, from https://www.gov.uk/port"),
+    ("harvard", "*Port statistics* (n.d.) Available at: https://www.gov.uk/port (Accessed: 29 March 2016)."),
+    ("vancouver", "Port statistics [Internet]. Department for Transport; [date unknown] [cited 2016 Mar 29]. "
+                  "Available from: https://www.gov.uk/port"),
+    ("chicago", '"Port statistics." n.d. Department for Transport. Accessed March 29, 2016. https://www.gov.uk/port.'),
+    ("ieee", '"Port statistics." Department for Transport. https://www.gov.uk/port (accessed Mar. 29, 2016).'),
+])
+def test_undated_web_page_without_author(web_ref, style, expected):
+    assert format_citation(web_ref, style) == expected
+
+
+def test_dated_web_page_needs_no_retrieval_date(web_ref):
+    web_ref.update(year="2024", authors=["Department for Transport,"])
+    assert format_citation(web_ref, "apa7") == (
+        "Department for Transport. (2024). *Port statistics*. https://www.gov.uk/port")
+    assert "Accessed" not in format_citation(web_ref, "chicago")
+
+
+def test_unreadable_access_date_is_printed_as_typed(report_ref):
+    report_ref["access_date"] = "2/10/2025"  # 2 October or February 10?
+    assert "(Accessed: 2/10/2025)" in format_citation(report_ref, "harvard")
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("11 November 2026", (2026, 11, 11)), ("11 Nov 2026", (2026, 11, 11)),
+    ("November 11, 2026", (2026, 11, 11)), ("Sept. 3, 2024", (2024, 9, 3)),
+    ("29.03.2016", (2016, 3, 29)), ("2025-02-01T11:43:59", (2025, 2, 1)),
+    ("2025/02/01/", (2025, 2, 1)), ("2/24/2025", (2025, 2, 24)), ("24/2/2025", (2025, 2, 24)),
+    ("2/10/2025", None), ("01.12.", None), ("31.02.2020", None), ("last week", None), ("", None),
+])
+def test_parse_date(text, expected):
+    assert _parse_date(text) == (_date_mod.date(*expected) if expected else None)
+
+
+def test_is_author():
+    assert _is_author("The Scottish Government", ["Scottish Government,"])
+    assert _is_author("Becton, Dickinson and Company", ["Becton,, Dickinson and Company"])
+    assert not _is_author("Smith", ["Smith, John"])          # a person, not a publisher
+    assert not _is_author("Scottish Government", ["Welsh Government,"])
+
+
+def test_bibtex_authors_and_link(report_ref):
+    assert _bibtex_author("Smith, John A.") == "Smith, John A."
+    assert _bibtex_author("King, Martin Luther, Jr.") == "King, Jr., Martin Luther"
+    assert _bibtex_author("Becton,, Dickinson and Company") == "{Becton, Dickinson and Company}"
+    bib = format_bibtex(report_ref)
+    assert "author = {{Scottish Government}}" in bib
+    assert "url = {https://www.gov.scot/publications/x/}" in bib
+    assert "urldate = {2026-11-11}" in bib
+
+
+@pytest.mark.parametrize("ref_type, journal", [("Journal Article", "Artificial Intelligence Review"),
+                                                ("Web Page", ""), ("Book Section", "A Book"),
+                                                ("Conference Paper", "EURAM 2021")])
+def test_record_without_title_leaves_no_stray_punctuation(sample_ref, ref_type, journal):
+    sample_ref.update(title="", ref_type=ref_type, journal=journal)
+    for style in ("apa7", "harvard", "vancouver", "chicago", "ieee"):
+        cite = format_citation(sample_ref, style)
+        for debris in ("''", '"."', '","', ". .", "**", "[Internet]."):
+            assert debris not in cite, (style, cite)
+
+
+@pytest.mark.parametrize("text, expected", [("05/05/2024", (2024, 5, 5)), ("15. 05. 2022", (2022, 5, 15)),
+                                            ("6/12/2022", None)])
+def test_parse_date_more_shapes(text, expected):
+    assert _parse_date(text) == (_date_mod.date(*expected) if expected else None)
+
+
+def test_quotes_around_a_whole_title_are_dropped(web_ref):
+    web_ref.update(title='"BASIC"', year="2021", authors=["Britannica, Encyclopedia"])
+    assert format_citation(web_ref, "chicago").startswith('Britannica, Encyclopedia. 2021. "BASIC." ')
+    assert format_citation(web_ref, "ieee").startswith('E. Britannica. "BASIC." ')
+    assert "*BASIC*." in format_citation(web_ref, "apa7")
+
+
+def test_quotes_inside_a_quoted_title_nest(sample_ref):
+    sample_ref["title"] = 'Why "blue growth" stalled'
+    assert "\"Why 'blue growth' stalled.\"" in format_citation(sample_ref, "chicago")
+    assert "\"Why 'blue growth' stalled,\"" in format_citation(sample_ref, "ieee")
+    assert "'Why \"blue growth\" stalled'," in format_citation(sample_ref, "harvard")  # single outside, double in
+
+
+def test_ieee_book_title_is_italic(sample_book_ref):
+    cite = format_citation(sample_book_ref, "ieee")
+    assert cite == "R. D. Stacey, *Strategic Management and Organisational Dynamics*. Harlow: Financial Times Prentice Hall, 2011."
+
+
+@pytest.mark.parametrize("style, title, expected", [
+    # Harvard quotes titles in single marks, so a quotation inside takes double
+    ("harvard", "Thematic analysis as 'saliency analysis'", "'Thematic analysis as \"saliency analysis\"',"),
+    ("harvard", "'Cyber' Cargo Crime Called Growing Threat", "'\"Cyber\" Cargo Crime Called Growing Threat',"),
+    ("harvard", "Now Cheaper, But not \"Cheap Oil\"", "'Now Cheaper, But not \"Cheap Oil\"',"),
+    # Chicago and IEEE use double marks: single inside, and back to double a level deeper
+    ("chicago", "'Zombie' malware targets shipping", "\"'Zombie' malware targets shipping.\""),
+    ("chicago", "\"Is there such a thing as 'evidence-based management'?\": A commentary",
+     "\"'Is there such a thing as \"evidence-based management\"?': A commentary.\""),
+    ("ieee", "Scotland's “blue” economy", "\"Scotland's ‘blue’ economy,\""),
+    # already alternating the right way round for Harvard: left alone
+    ("harvard", "\"Is there such a thing as 'evidence-based management'?\": A commentary",
+     "'\"Is there such a thing as 'evidence-based management'?\": A commentary',"),
+])
+def test_quotations_inside_titles_alternate(sample_ref, style, title, expected):
+    sample_ref["title"] = title
+    assert expected in format_citation(sample_ref, style)

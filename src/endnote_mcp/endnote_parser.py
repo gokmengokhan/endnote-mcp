@@ -61,6 +61,56 @@ def _extract_pdf_filename(record: etree._Element) -> str:
     return ""
 
 
+def _record_to_ref(record: etree._Element) -> dict | None:
+    """One <record> as a dict ready for db.upsert_reference(), or None without a record number."""
+    rec_number_text = _find_text(record, "rec-number")
+    if not rec_number_text:
+        return None
+    try:
+        rec_number = int(rec_number_text)
+    except ValueError:
+        return None
+
+    ref_type_el = record.find("ref-type")
+    ref_type = ref_type_el.get("name", "") if ref_type_el is not None else ""
+    authors = _find_all_text(record, ".//contributors/authors/author")
+    keywords = _find_all_text(record, ".//keywords/keyword")
+
+    volume = _find_text(record, ".//volume")
+    number = _find_text(record, ".//number")
+    access_date = _find_text(record, ".//access-date")
+    if ref_type == "Web Page":
+        # A Web Page's "Access Date" box is EndNote's generic Number field and
+        # its "Access Year" the generic Volume: no issue or volume to report.
+        access_date = number or access_date
+        volume = number = ""
+
+    return {
+        "rec_number": rec_number,
+        "ref_type": ref_type,
+        "title": _find_text(record, ".//titles/title"),
+        "authors": json.dumps(authors),
+        "year": _find_text(record, ".//dates/year"),
+        "journal": _find_text(record, ".//titles/secondary-title"),
+        "volume": volume,
+        "issue": number,
+        "pages": _find_text(record, ".//pages"),
+        "abstract": _find_text(record, ".//abstract"),
+        "keywords": json.dumps(keywords),
+        "doi": _find_text(record, ".//electronic-resource-num"),
+        "url": _find_text(record, ".//urls/related-urls/url"),
+        "publisher": _find_text(record, ".//publisher"),
+        "place_published": _find_text(record, ".//pub-location"),
+        "edition": _find_text(record, ".//edition"),
+        "isbn": _find_text(record, ".//isbn"),
+        "label": _find_text(record, ".//label"),
+        "notes": _find_text(record, ".//notes"),
+        "research_notes": _find_text(record, ".//research-notes"),
+        "pdf_path": _extract_pdf_filename(record),
+        "access_date": access_date,
+    }
+
+
 def parse_endnote_xml(xml_path: str | Path) -> Generator[dict, None, None]:
     """Yield one dict per <record> in the EndNote XML export.
 
@@ -71,57 +121,18 @@ def parse_endnote_xml(xml_path: str | Path) -> Generator[dict, None, None]:
     context = etree.iterparse(str(xml_path), events=("end",), tag="record")
 
     for _event, record in context:
-        rec_number_text = _find_text(record, "rec-number")
-        if not rec_number_text:
-            record.clear()
-            continue
-
-        try:
-            rec_number = int(rec_number_text)
-        except ValueError:
-            record.clear()
-            continue
-
-        # Reference type
-        ref_type_el = record.find("ref-type")
-        ref_type = ref_type_el.get("name", "") if ref_type_el is not None else ""
-
-        # Authors
-        authors = _find_all_text(record, ".//contributors/authors/author")
-
-        # Keywords
-        keywords = _find_all_text(record, ".//keywords/keyword")
-
-        # PDF filename
-        pdf_filename = _extract_pdf_filename(record)
-
-        ref = {
-            "rec_number": rec_number,
-            "ref_type": ref_type,
-            "title": _find_text(record, ".//titles/title"),
-            "authors": json.dumps(authors),
-            "year": _find_text(record, ".//dates/year"),
-            "journal": _find_text(record, ".//titles/secondary-title"),
-            "volume": _find_text(record, ".//volume"),
-            "issue": _find_text(record, ".//number"),
-            "pages": _find_text(record, ".//pages"),
-            "abstract": _find_text(record, ".//abstract"),
-            "keywords": json.dumps(keywords),
-            "doi": _find_text(record, ".//electronic-resource-num"),
-            "url": _find_text(record, ".//urls/related-urls/url"),
-            "publisher": _find_text(record, ".//publisher"),
-            "place_published": _find_text(record, ".//pub-location"),
-            "edition": _find_text(record, ".//edition"),
-            "isbn": _find_text(record, ".//isbn"),
-            "label": _find_text(record, ".//label"),
-            "notes": _find_text(record, ".//notes"),
-            "research_notes": _find_text(record, ".//research-notes"),
-            "pdf_path": pdf_filename,
-        }
-
-        yield ref
+        ref = _record_to_ref(record)
+        if ref is not None:
+            yield ref
 
         # Free memory
         record.clear()
         while record.getprevious() is not None:
             del record.getparent()[0]
+
+
+def parse_endnote_xml_string(text: str) -> list[dict]:
+    """Parse EndNote XML held in a string, such as records read back from EndNote."""
+    parser = etree.XMLParser(resolve_entities=False, no_network=True)
+    root = etree.fromstring(text.encode("utf-8"), parser)
+    return [ref for rec in root.iter("record") if (ref := _record_to_ref(rec)) is not None]

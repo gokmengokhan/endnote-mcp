@@ -9,7 +9,8 @@ from pathlib import Path
 # Bumped whenever the on-disk schema changes; see _migrate().
 #   1 - initial schema
 #   2 - research_notes column; research_notes + notes added to references_fts
-SCHEMA_VERSION = 2
+#   3 - access_date column (when an online source was read)
+SCHEMA_VERSION = 3
 
 # The FTS5 index columns and their BM25 weights, in order. Both the schema and
 # the search queries are generated from these, so a column can never be added
@@ -119,6 +120,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(references_)")}
     if "research_notes" not in columns:
         conn.execute("ALTER TABLE references_ ADD COLUMN research_notes TEXT")
+    if "access_date" not in columns:
+        conn.execute("ALTER TABLE references_ ADD COLUMN access_date TEXT")
 
     if _fts_columns(conn) != FTS_COLUMNS:
         _rebuild_references_fts(conn)
@@ -151,7 +154,8 @@ def _create_schema(conn: sqlite3.Connection) -> None:
             label        TEXT,
             notes        TEXT,          -- EndNote Notes (often import residue)
             research_notes TEXT,        -- EndNote Research Notes (user's own)
-            pdf_path     TEXT           -- relative to pdf_dir
+            pdf_path     TEXT,          -- relative to pdf_dir
+            access_date  TEXT           -- when an online source was read, as typed
         );
 
     """)
@@ -212,23 +216,33 @@ def _create_schema(conn: sqlite3.Connection) -> None:
     """)
 
 
+_TEXT_COLUMNS = (
+    "ref_type", "title", "authors", "year", "journal", "volume", "issue", "pages",
+    "abstract", "keywords", "doi", "url", "publisher", "place_published", "edition",
+    "isbn", "label", "notes", "research_notes", "pdf_path", "access_date",
+)
+
+
 def upsert_reference(conn: sqlite3.Connection, ref: dict) -> None:
     """Insert or update a reference record.
 
     Uses ON CONFLICT DO UPDATE instead of INSERT OR REPLACE to avoid
     triggering ON DELETE CASCADE on pdf_pages and reference_embeddings.
+    A field missing from *ref* is stored empty, so adding a column doesn't
+    break callers that predate it.
     """
+    ref = {**dict.fromkeys(_TEXT_COLUMNS, ""), **ref}
     conn.execute("""
         INSERT INTO references_(
             rec_number, ref_type, title, authors, year, journal,
             volume, issue, pages, abstract, keywords, doi, url,
             publisher, place_published, edition, isbn, label, notes,
-            research_notes, pdf_path
+            research_notes, pdf_path, access_date
         ) VALUES (
             :rec_number, :ref_type, :title, :authors, :year, :journal,
             :volume, :issue, :pages, :abstract, :keywords, :doi, :url,
             :publisher, :place_published, :edition, :isbn, :label, :notes,
-            :research_notes, :pdf_path
+            :research_notes, :pdf_path, :access_date
         )
         ON CONFLICT(rec_number) DO UPDATE SET
             ref_type=excluded.ref_type, title=excluded.title,
@@ -241,7 +255,7 @@ def upsert_reference(conn: sqlite3.Connection, ref: dict) -> None:
             edition=excluded.edition, isbn=excluded.isbn,
             label=excluded.label, notes=excluded.notes,
             research_notes=excluded.research_notes,
-            pdf_path=excluded.pdf_path
+            pdf_path=excluded.pdf_path, access_date=excluded.access_date
     """, ref)
 
 

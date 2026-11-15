@@ -197,3 +197,28 @@ def test_migrated_db_indexes_research_notes(legacy_db_path):
     conn.commit()
     assert len(search_references(conn, "zxqmarker")) == 1
     conn.close()
+
+
+def test_version_2_db_gains_access_date(tmp_path):
+    """Indexes built by 1.4.x (schema 2) get the access_date column on first open."""
+    from endnote_mcp.db import SCHEMA_VERSION, connect
+
+    path = tmp_path / "v2.db"
+    conn = connect(path)
+    conn.execute("ALTER TABLE references_ DROP COLUMN access_date")
+    conn.execute("PRAGMA user_version = 2")
+    conn.commit()
+    conn.close()
+
+    conn = connect(path)
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(references_)")}
+    assert "access_date" in columns
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 3
+    conn.close()
+
+
+def test_upsert_fills_in_missing_fields(db_conn):
+    upsert_reference(db_conn, {"rec_number": 5, "title": "Only a title"})
+    db_conn.commit()
+    row = db_conn.execute("SELECT title, url, access_date FROM references_ WHERE rec_number = 5").fetchone()
+    assert tuple(row) == ("Only a title", "", "")

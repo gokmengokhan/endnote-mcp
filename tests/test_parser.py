@@ -69,3 +69,45 @@ def test_parse_research_notes(sample_xml):
 def test_research_notes_absent_is_empty_string(sample_xml):
     refs = {r["rec_number"]: r for r in parse_endnote_xml(sample_xml)}
     assert refs[1]["research_notes"] == ""
+
+
+def test_parse_xml_string():
+    """Records read back from EndNote arrive as a string, not a file."""
+    from endnote_mcp.endnote_parser import parse_endnote_xml_string
+
+    text = (
+        '<?xml version="1.0" encoding="UTF-8" ?><xml><records>'
+        '<record><database name="L.enl" path="/L.enl">L.enl</database><rec-number>7</rec-number>'
+        '<ref-type name="Report">27</ref-type><contributors><authors><author>'
+        '<style face="normal">Scottish Government,</style></author></authors></contributors>'
+        '<titles><title>Scotland’s Blue Economy</title></titles>'
+        '<urls><pdf-urls><url>internal-pdf://1234567890/r.pdf</url></pdf-urls></urls></record>'
+        "<record><titles><title>no record number</title></titles></record>"
+        "</records></xml>"
+    )
+    refs = parse_endnote_xml_string(text)
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref["rec_number"] == 7 and ref["ref_type"] == "Report"
+    assert ref["title"] == "Scotland’s Blue Economy"
+    assert json.loads(ref["authors"]) == ["Scottish Government,"]
+    assert ref["pdf_path"] == "r.pdf"
+
+
+def test_access_dates():
+    """A Web Page keeps its Access Date in EndNote's Number field and its Access Year in Volume."""
+    from endnote_mcp.endnote_parser import parse_endnote_xml_string
+
+    refs = {r["rec_number"]: r for r in parse_endnote_xml_string(
+        "<xml><records>"
+        '<record><rec-number>1</rec-number><ref-type name="Web Page">12</ref-type>'
+        "<volume>2016</volume><number>29.03.2016</number></record>"
+        '<record><rec-number>2</rec-number><ref-type name="Report">27</ref-type>'
+        "<number>WP-7</number><access-date>11 November 2026</access-date></record>"
+        '<record><rec-number>3</rec-number><ref-type name="Journal Article">17</ref-type>'
+        "<volume>12</volume><number>3</number></record>"
+        "</records></xml>"
+    )}
+    assert (refs[1]["access_date"], refs[1]["volume"], refs[1]["issue"]) == ("29.03.2016", "", "")
+    assert (refs[2]["access_date"], refs[2]["issue"]) == ("11 November 2026", "WP-7")
+    assert (refs[3]["access_date"], refs[3]["volume"], refs[3]["issue"]) == ("", "12", "3")
