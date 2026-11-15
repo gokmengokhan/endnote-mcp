@@ -38,6 +38,12 @@ class Config:
     # EndNote's Notes field usually holds import residue rather than the
     # user's own writing, so it is excluded from searches unless enabled.
     search_notes: bool = False
+    # Opt-in, macOS only: the add_reference tool, which writes new records
+    # into the library through the EndNote app.
+    add_references: bool = False
+    # The library add_reference writes to (.enl or .enlp). When unset it is
+    # worked out from pdf_dir, which lives inside the library's .Data folder.
+    endnote_library: Path | None = None
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> Config:
@@ -84,10 +90,13 @@ class Config:
         else:
             db_path = get_config_dir() / "library.db"
 
+        library_raw = raw.get("endnote_library")
         return cls(
             endnote_xml=endnote_xml,
             pdf_dir=pdf_dir,
             db_path=db_path,
             max_pdf_pages=int(raw.get("max_pdf_pages", 30)),
             search_notes=bool(raw.get("search_notes", False)),
+            add_references=bool(raw.get("add_references", False)),
+            endnote_library=Path(library_raw).expanduser().resolve() if library_raw else None,
         )

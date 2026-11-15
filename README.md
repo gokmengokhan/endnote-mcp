@@ -164,6 +164,7 @@ This uses the lightweight [all-MiniLM-L6-v2](https://huggingface.co/sentence-tra
 | `read_pdf_section` | Read specific pages from a PDF attachment |
 | `list_references_by_topic` | Broad topic-based listing |
 | `rebuild_index` | Re-index after updating your EndNote library |
+| `add_reference` | Add a new reference to your EndNote library (macOS, opt-in; [see below](#letting-claude-add-references-macos-opt-in)) |
 
 ## Adding New References
 
@@ -175,6 +176,28 @@ When you add new references to your EndNote library:
    - Ask Claude: *"Rebuild my library index"*
 
 Indexing is **incremental** — it only processes new references and PDFs, not the entire library again. If semantic search is installed, new references are automatically embedded.
+
+## Letting Claude Add References (macOS, opt-in)
+
+Switch this on and Claude can put a source it has found, say a government report, straight into EndNote: *"Add that report to my EndNote library."* Claude fills in only what the source states, and the tool:
+
+1. checks your library for the same DOI, URL, or title and year, and adds nothing if it finds one;
+2. writes each value into the field EndNote shows for that reference type (a Report's Institution and Report Number, a Web Page's Access Date, and so on);
+3. downloads and attaches the PDF when given a direct link to it;
+4. reads the new record back from EndNote and reports any field that came out differently;
+5. labels it "Added by Claude" and adds it to the search index, so Claude can cite it at once.
+
+It handles Journal Article, Book, Book Section, Report, Web Page and Conference Proceedings. To switch it on, add this to `config.yaml` and restart Claude Desktop:
+
+```yaml
+add_references: true
+```
+
+The first time, macOS asks whether Claude may control EndNote; allow it (System Settings > Privacy & Security > Automation). If EndNote or your library is closed, it is opened.
+
+To review what Claude adds, create a Smart Group in EndNote with **Label contains Added by Claude**. New records collect there and in Recently Added; clear the label once you've checked a record and it leaves the group.
+
+This is the only tool that writes to your library, which is why it is off by default. It needs macOS, because it drives the EndNote app through AppleScript (tested with EndNote 2025), and it is not part of the Desktop bundle. The library is the one `pdf_dir` sits in; set `endnote_library` if that can't be worked out. An attached PDF's text becomes searchable after the next `endnote-mcp index`.
 
 ## Performance
 
@@ -200,6 +223,8 @@ pdf_dir: /path/to/your/Library.Data/PDF
 db_path: /path/to/library.db    # auto-set by setup
 max_pdf_pages: 30                # max pages per read request
 search_notes: false              # include the EndNote Notes field in searches
+add_references: false            # let Claude add references to EndNote (macOS)
+endnote_library: /path/to/your/Library.enlp  # optional; inferred from pdf_dir
 ```
 
 ### Notes fields

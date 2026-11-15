@@ -67,6 +67,31 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.mark.anyio
+async def test_add_reference_is_opt_in_and_mac_only(server, monkeypatch, tmp_path):
+    """add_reference writes to the user's library: only with add_references: true, only on macOS."""
+    fresh = server._Server("test")
+    monkeypatch.setattr(server, "mcp", fresh)
+    cfg = Config(endnote_xml=tmp_path / "x.xml", pdf_dir=tmp_path, db_path=tmp_path / "db")
+    monkeypatch.setattr(server, "_config", cfg)
+
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    assert server.register_optional_tools() == []
+    cfg.add_references = True
+    monkeypatch.setattr(server.sys, "platform", "win32")
+    assert server.register_optional_tools() == []
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    assert server.register_optional_tools() == ["add_reference"]
+    assert {t.name for t in await fresh.list_tools()} == {"add_reference"}
+
+
+def test_no_config_registers_nothing(server, monkeypatch):
+    monkeypatch.setattr(server, "_config", None)
+    monkeypatch.setattr(server, "_get_config", lambda: (_ for _ in ()).throw(FileNotFoundError("none")))
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    assert server.register_optional_tools() == []
+
+
 def test_bundle_manifest_lists_the_same_tools():
     """mcpb/manifest.json advertises the tool list; it must not drift from the server."""
     manifest = json.loads(

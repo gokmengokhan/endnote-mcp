@@ -1,4 +1,5 @@
-"""MCP server exposing 12 tools for Claude to interact with an EndNote library."""
+"""MCP server exposing 12 tools for Claude to interact with an EndNote library,
+plus add_reference on macOS when the config opts in."""
 
 from __future__ import annotations
 
@@ -625,9 +626,86 @@ def rebuild_index() -> str:
 
 
 # ====================================================================
+# Tool 13 (opt-in, macOS): add_reference
+# ====================================================================
+def add_reference(
+    reference_type: str,
+    title: str,
+    authors: list[str] | None = None,
+    year: str = "",
+    url: str = "",
+    fields: dict[str, str | list[str]] | None = None,
+    pdf_url: str = "",
+    allow_duplicate: bool = False,
+) -> str:
+    """Add a new reference to the user's EndNote library.
+
+    Use this only when the user asks to add a source to EndNote. Fill in only
+    what the source itself states (its title page, cover, imprint or web
+    page) and leave out a field rather than guess it. The record is labelled
+    "Added by Claude", shows in EndNote's Recently Added group, and can be
+    cited straight away with the [n] this returns. It first checks the
+    library for the same DOI, URL, or title and year, and adds nothing if
+    it finds one. Report back to the user what was stored.
+
+    Args:
+        reference_type: "Journal Article", "Book", "Book Section", "Report",
+            "Web Page" or "Conference Proceedings". File a report from a
+            government, agency or other organisation as "Report".
+        title: The title as the source gives it.
+        authors: Each person as "Last, First Middle", e.g. "Öztürk, İsmail Çağrı".
+            Each organisation in braces, e.g. "{Scottish Government}". When an
+            organisation issues a report with no named authors, it is the author.
+        year: Four-digit year of publication.
+        url: The source's web address. For a Report or Web Page, today's date
+            goes into Access Date unless fields gives one.
+        fields: Other fields, keyed by the name EndNote shows for the type, e.g.
+            Report: Institution, Place Published, Report Number, Date, Pages, Series Title;
+            Journal Article: Journal, Volume, Issue, Pages, DOI;
+            Book: Publisher, Place Published, Edition, ISBN, Editor;
+            Book Section: Book Title, Editor, Publisher, Place Published, Pages;
+            Web Page: Publisher, Last Update Date, Access Date;
+            Conference Proceedings: Conference Name, Conference Location, Editor, Pages.
+            Names (Editor, Series Editor, ...) take a list written like authors;
+            Keywords takes a list. An unknown field name returns the type's full list.
+        pdf_url: Direct link to the source's PDF; it is downloaded and attached.
+        allow_duplicate: Add it even if the library already has a matching record.
+    """
+    from endnote_mcp.endnote_app import EndNoteApp
+    from endnote_mcp.writer import add_reference as _add
+
+    return _add(
+        EndNoteApp(), _get_config(),
+        reference_type=reference_type, title=title, authors=authors, year=year,
+        url=url, fields=fields, pdf_url=pdf_url, allow_duplicate=allow_duplicate,
+    )
+
+
+def register_optional_tools() -> list[str]:
+    """Register the tools a config opts into; returns their names.
+
+    add_reference writes to the user's EndNote library, so it is offered only
+    when config.yaml sets add_references: true, and only on macOS, where
+    EndNote can be driven through AppleScript. Called at startup, before the
+    client first lists the tools.
+    """
+    if sys.platform != "darwin":
+        return []
+    try:
+        cfg = _get_config()
+    except Exception:  # no config yet: the other tools report that when used
+        return []
+    if not cfg.add_references:
+        return []
+    mcp.tool()(add_reference)
+    return ["add_reference"]
+
+
+# ====================================================================
 # Entry point
 # ====================================================================
 def main():
+    register_optional_tools()
     mcp.run()
 
 

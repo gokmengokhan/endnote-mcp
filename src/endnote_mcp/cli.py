@@ -143,8 +143,8 @@ def index(full, skip_pdfs, embed, config):
 @cli.command()
 def serve():
     """Start the MCP server (called by Claude Desktop automatically)."""
-    from endnote_mcp.server import mcp as mcp_server
-    mcp_server.run()
+    from endnote_mcp.server import main as run_server
+    run_server()
 
 
 # ====================================================================

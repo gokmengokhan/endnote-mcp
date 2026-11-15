@@ -47,6 +47,8 @@ Go through every citation; don't stop at the first problem.
 
 **Read a paper.** `read_pdf_section` returns 5 pages by default and up to 30 per call. Find the relevant pages with `search_fulltext` first rather than reading the whole file. "Indexed PDF pages: 0" in `get_reference_details` means the attachment has no searchable text, usually because it is a scan: it can be cited, but not searched or quoted until the user OCRs it and re-indexes.
 
+**Add a source to EndNote.** Only when the user asks, and only if the `add_reference` tool is available (it is opt-in and macOS only). Take every value from the source itself (title page, cover, imprint, web page) and leave out a field rather than guess. File a report from a government, agency or other organisation as `Report`, with the organisation in braces as its author, `{Scottish Government}`; people go as `Last, First`. Pass `pdf_url` only for a direct link to the PDF. Show the user what was stored, including any field reported as different, and cite the new record by the number returned. If it reports a duplicate, use the existing record.
+
 ## When something seems missing
 
-New references appear only after the user re-exports the library from EndNote (File > Export, XML format, overwriting the same file) and the index is rebuilt, with `rebuild_index` or `endnote-mcp index` in a terminal. Indexing is incremental, so repeat runs are quick. You can't do the export yourself, so ask the user to do it first.
+New references appear only after the user re-exports the library from EndNote (File > Export, XML format, overwriting the same file) and the index is rebuilt, with `rebuild_index` or `endnote-mcp index` in a terminal. Indexing is incremental, so repeat runs are quick. You can't do the export yourself, so ask the user to do it first. References added with `add_reference` are the exception: they are in the index at once.
